@@ -1,2 +1,2 @@
 # Michael-M-Code-Portfolio
-This is a portfolio showcasing many different coding projects that I have completed both in my college courses as well as personal coding projects I have done for fun.
+This is a portfolio showcasing many different coding projects that I have completed both in my college courses as well as personal coding projects I have done for fun. I have split my repository into 2 different branches, college courses and side-projects. The college courses branch features codes I have done for classes and the side-projects branch features projects I have done for fun in my own free time.
