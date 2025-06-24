@@ -6,8 +6,8 @@ output: html_notebook
 This entire R-Notebook is for Cipher Encryption in English.
 
 First and foremost, in order to do any form of automated encryption or decryption 
-we need to establish a system. Crypography uses a a letter to number conversion 
-for encryption systems and then a number to letter conversion system for decryption. 
+we need to establish a system. Crypography uses a a letter to integer conversion 
+for encryption systems and then a integer to letter conversion system for decryption. 
 
 # Conversion System
 ## Set Up
@@ -136,7 +136,7 @@ that way any function that has a dependency on one of these rules it will alread
 
 GCD <- function(a,b){
 #This function will do just as it's name says, it will find us the GCD (Greatest
-#Common Division) between 2 numbers a and b. This means it will find what the
+#Common Division) between 2 integers a and b. This means it will find what the
 #largest integer that divides both a and b.
   
   d = 1
@@ -171,8 +171,8 @@ GCD <- function(a,b){
     #Next we need to look at the rest of the cases.
     while(n < b){
       #We are going to iterate over every integer between 2 and b/2.
-      #We stop once we get to b/2 because there is no number larger than b/2
-      #that can be multiplied by a number smaller than b/2 to get b. This is 
+      #We stop once we get to b/2 because there is no integer larger than b/2
+      #that can be multiplied by a integer smaller than b/2 to get b. This is 
       #because 2*b/2 = b.
       
       if(a%%n == 0 & b%%n==0){
@@ -197,7 +197,7 @@ GCD <- function(a,b){
 
 ```{r}
 #Now were going to create a very fast but very useful function called the coprime
-#function. 2 numbers are coprime with each other if they have no multiples in 
+#function. 2 integers are coprime with each other if they have no multiples in 
 #common. I.e their GCD is 1. 
 
 #For example, 14 and 15 are coprime because 14 has the multiples 1,2,7,14 
@@ -254,7 +254,7 @@ shift_cipher <- function(x,k,n){
   for(i in 1:str_length(q)){
     encrypted[i] <- alphabet[alphabet$number == encryption[i],1]
     #Now were going to do the reverse of the let_num function. We are going to 
-    #find the corresponding letter to our current encryption numbers, then append
+    #find the corresponding letter to our current encryption integers, then append
     #our blank vector with said letters.
     
     #Example: encrypted <- c() = NULL
@@ -313,7 +313,7 @@ affine_cipher <- function(x,a,b,n){
 
 Now, our affine cipher can be considered barely secure- if our only way of decrypting 
 it was by hand. An Affine cipher has as many possible outcomes as the amount of 
-coprime numbers between 1 and n multipled by n. Meaning with n=26 we have 
+coprime integers between 1 and n multipled by n. Meaning with n=26 we have 
 totient(26)*26 possible combinations. This means anyone has a 1 in 312 chance or 
 a ~0.321% chance of randomly guessing your message. However we live in the day 
 and age of computers so we need to imporve our cipher.
