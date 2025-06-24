@@ -1,0 +1,332 @@
+---
+title: "Cryptography Decryption Code"
+output: html_notebook
+---
+
+This entire R-Notebook is for Cipher Decryption in English.
+
+First and foremost, in order to do any form of automated encryption or decryption 
+we need to establish a system. Crypography uses a a letter to integer conversion 
+for encryption systems and then a integer to letter conversion system for decryption. 
+
+# Conversion System
+## Set Up
+### Alphabet Database
+This section must be changed to reflect the language and alphabet you wish to use. 
+By Default this is set to the English Alphabet.
+```{r}
+alphabet = data.frame(
+  #Create a dataframe that holds all of the Capital letters in English and their
+  #Corresponding Z_26 value in order to be able to do our ciphers
+  letter = c("A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q",
+             "R","S","T","U","V","W","X","Y","Z"),
+  number = c(0:25)
+  #Example: A=0, B=1, C=2,...Y=24,Z=25
+)
+```
+
+### Conversion
+```{r}
+let_num <- function(x){
+  #This function simply takes the inputted letter, x, and returns the numerical 
+  #value based on the previous dataframe
+   return(alphabet[alphabet$letter==x,2])
+  #For example, if we put input "J", the function returns the integer 9.
+}
+```
+
+## Automation
+```{r}
+library(stringr)
+#In order to be able to take in all cases for encryption process, meaning anyone
+#can simply type out their message normally in English and the ciphers will work
+#just fine, we need to import the stringr library that is built into R.
+#I chose to make the ciphers more accessible instead of having to have the user 
+#worry about creating acceptable plaintext to help ensure the code runs without
+#errors.
+
+word_num <- function(x){
+  #This function here is simply taking the inputted sentance and turning it into
+  #plaintext and spitting out the numerical version of our plaintext.
+  
+  number_vector = c()
+  #We create a blank vector for now. This vector will be appended later to help
+  #our output
+  
+  s <- str_replace_all(x,"[^[:alnum:]]","")
+  #We create a random local variable, s. This variable will hold our inputted 
+  #sentence or word, however, we use the str_replace_all function with the 
+  #"[^[:alnum:]]" argument to get rid of all special characters.
+  
+  p <- gsub(" ","",s)
+  #We now create p, which is only composed of words and spaces, and we remove all
+  #of the spaces using the gsub function. Our arguments may look blank, however
+  #having a space in between our quotes means that the space exists and we are 
+  #replacing it with the null value-which is the value between our second set of
+  #quotations- essentially getting rid of the spaces.
+  
+  p_split <- unlist(strsplit(p,""))
+  #Now we create another local variable, p_split. First we have the strsplit 
+  #function. This function takes our string, p, and splits it into sub-strings 
+  #based on our chosen argument, "". What we have done with this strsplit is we
+  #have taken our previous string with no spaces and split it into a giant list
+  #where every letter is an entry. Then we use the unlist function to simply
+  #flatten our list. This flattened list is our p_split, which is simply our 
+  #inputted string as a list letter by letter.
+  
+  #Example: x <- "How's your day?"
+  # s <- "Hows your day"
+  # p <- "Howsyourday"
+  # p_split <- ["H","o","w",...,"a","y"]
+  
+  for(i in 1:str_length(p)){
+    #Now we are going to create a for loop to iterate through our list and create
+    #the numerical value output vector. We use the length of our string p, to 
+    #make sure our iteration is of the correct size. If we used s, then the length
+    #would include the spaces, thus making our iteration out of bounds.
+    
+    if(str_detect(p_split[i],"[[:upper:]]")==FALSE){
+      #Now our let_num function above only works if the inputted letter is capital.
+      #So we need to check every letter. The "[[:upper:]]" argument tells us if
+      #the current letter/string is all capital or lowercase. If our letter is 
+      #lowercase we need to change it to it's capital counterpart in order for our
+      #function to work (also because that is how proper plaintext is).
+      
+      #Example: str_detect("H","[[:upper:]]") == TRUE
+      #str_detect("h","[[:upper:]]") == FALSE
+      
+      p_split[i] = toupper(p_split[i])
+      #If our letter is lowercase, then we use the function toupper, to change it
+      #to an upper (capital) letter.
+      
+      #Example: "H" = toupper("h")
+    }
+    
+    #At this point we have ensured our inputted sentence is now in proper plaintext
+    #form (as a list).
+    
+    #Example: x <- "How's your day?"
+    #p_split <- ["H","O","W",...,"A","Y"]
+    
+    number_vector <- append(number_vector,let_num(p_split[i]))
+    #Now we are going to append to our blank vector from the start of this function
+    #All we need to do here is apply our let_num function to each index of p_split
+    #and append it to our vector.
+    
+    #Example: number_vector <- c() = NULL
+    #number_vector <- append(number_vector, let_num("H")) 
+    #number_vector = c(7) = 7
+  }
+  number_vector
+  #Finally we call our number vector.
+  
+  #Example: x <- "How's your day?"
+  #number_vector = c(7,14,22,18,24,14,20,17,3,0,24)= 7 14 22 ... 3 0 24
+}
+```
+
+# Decryption
+## Special Rules
+I have the special rules section first before any of our functions that way they 
+are all in one easy to access area and they are all loaded before the functions,
+that way any function that has a dependency on one of these rules it will already be loaded and ready.
+
+```{r}
+#We are going to create a function that determines if an integer is prime or not.
+#Now I know there is no current function that can accurately determine if any
+#integer is prime with 100% accuracy, however R can only handle up to 16 digit
+#integers accurately so most modern functions will be accurate.
+
+is_prime<- function(a){
+  #This function will be utilizing the conjecture that if an integer has no other
+  #multiples other than 1 (with a range of 2 to the square root of that integer) 
+  #that can divide it, then it is prime.
+  n = 2
+  while(n <= a^(1/2)){
+    if(a%%n == 0){
+      return(FALSE)
+      break
+    }
+    else{
+      n = n+1
+    }
+  }
+  if(n > a^(1/2)){
+    return(TRUE)
+  }
+}
+```
+
+```{r}
+#Now we create the Euler Totient Function. The Euler Totient Function tells us
+#the number of integers from 1 to n that are coprime with n.
+
+totient <- function(k){
+  n= 2
+  if(is_prime(k) == TRUE & k >1){
+    #We know that if a integer is prime, then every integer from 1 to n-1 only share
+    #a common multiple of 1 with it, therefore making them all coprime. 
+    return(k-1)
+  }
+  while(n < k){
+    #Now let's look at when we have a composite integer
+    
+    if(logb(k,base=n)%%1 ==0){
+      #I found an interesting pattern in the totient functions. If an integer is a
+      #a power of another integer (square, cube, quartic, etc.) then its totient 
+      #is equal to the totient of the root integer times the root integer to the
+      #power minus 1. For example: the totient of 4 is 2. The totient of 2 is 1
+      #and the square root of 4 is 2 and 2*1 =2. The totient of 16 is 8, the square
+      #root of 16 is 4, 4*2 =8. The totient of 27 is 18, the cubed root of 27 is 3,
+      #and the the totient of 3 is 2, and 3^2 = 9 and 9*2 = 18. So on and so forth.
+      return(totient(n)*n^(logb(k, base=n)-1))
+      #So what this function returns is totient(n) * n^(power -1). Lets say we
+      #wanted to know the totient of 16807. Our function would determine that 16807
+      #is a power of 7- the 5th power to be exact- and it would calculate the
+      #the totient(7)*7^4.
+      
+    }else if(k%%n == 0){
+      #If the integer is not prime or a power of another, then we check its multiples.
+      #The reason we are checking it's multiples is because if we can find 2 of them
+      #that are coprime with one another, then the product of their totients is 
+      #equal to the totient of their product. 
+        a = n
+        b = k/n
+        if(GCD(a,b) == 1){
+          return(totient(a)*totient(b))
+        }else{
+          n = n+1
+        }
+      }else{
+        n= n+1
+      }
+  }
+  return(k)
+}
+```
+
+```{r}
+inverse_mod <- function(x,n){
+  #This function here will give us our inverse of any integer based on the modulus
+  
+  x = x%%n
+  #First and foremost we need to consider the fact that an integer may be used
+  #without modulating it.
+  
+  if(is_prime(n) == TRUE){
+    #Now we take our 2 known special rules into account. First, Fermat's little
+    #theorem states that if n is prime then x^(p-1) will be congruent to 1. So
+    #we can take this a step further and realize that if we have x^(p-1) that is
+    #the same as saying x*x^(p-2). This tell us that our inverse will be congruent
+    #to x^(p-2) mod n.
+    
+    return(x^(n-2)%%n)
+    
+  }else{
+    if(GCD(x,n)==1){
+    #Now we take our other special rule, Euler's theorem. Euler took Fermat's
+    #theorem and applied it to composite integers. As we said before x^(p-1) is 
+    #congruent to 1. Well p-1 just so happens to also be the totient of a prime.
+    #So Euler found that any integer x^totient(n) is congruent to 1 mod n. So we
+    #apply the same idea as p-2 and apply it to the totient.
+      return(x^(totient(n)-1) %%n)
+    }
+  }
+}
+```
+
+
+## Functions
+Now that we have our first encryption cipher, we need to figure out how to
+decrypt it in order to know it truly works. There are 2 ways to decrypt a cipher.
+1: Standard way, attempting to decrypt using known facts.
+2: Brute Force, trying every single variation.
+
+### 1: Standard
+```{r}
+#As you saw in the encryption document, our first encryption was for the shift 
+#cipher, so now lets try to decrypt it. 
+
+shift_decrypt<- function(x,k,n){
+  #And that lead us to this function. As you may notice, it looks exactly like
+  #the encryption function but the only change is that our F(x) is using -k
+  #instead of +k. And that is ok, because were still doing modular arythmatic.
+  #in modulo, -x = -x + n mod n. So with our previous example, x <- "khoor" and
+  #k = 3, n=26, We will get the same result as above because -3 = -3 + 26 mod 26
+  #= 23 mod 26. This is just a faster way of doing brute force
+  
+  encryption <- (word_num(x) - k) %% n
+  encrypted <- c()
+  q <- str_replace_all(x,"[^[:alnum:]]","")
+  q <- gsub(" ","", q)
+  for(i in 1:str_length(q)){
+    encrypted[i] <- alphabet[alphabet$number == encryption[i],1]
+  }
+  print(paste(encrypted, collapse = ""))
+}
+```
+
+```{r}
+#Now we are going to create a function to decrypt our affine ciphers.
+
+affine_decrypt <- function(x,a,b,n){
+  i = inverse_mod(a,n)
+  #First and formost we have to find the inverse of our coefficient. We are working
+  #with integers so fractions do not exist. So we have to find a substitute for 
+  #our fraction to multiple our function by in order to get the desired result.
+  
+  #Now that we have found our inverse, we do the exact same thing as our encryption
+  #function, however we subtract our j first then multiply it all by our inverse.
+  decryption <- (i*(word_num(x) - b)) %% n
+  decrypted <- c()
+  q <- str_replace_all(x,"[^[:alnum:]]","")
+  q <- gsub(" ","", q)
+  for(i in 1:str_length(q)){
+    decrypted[i] <- alphabet[alphabet$number == decryption[i],1]
+  }
+  print(paste(decrypted, collapse = ""))
+}
+```
+
+
+### 2: Brute Force (If Applicable)
+Not all ciphers or encryptions can be brute forced. In theory they all can be,
+however both the computing power and resources to do so grow astronomically with
+the inventions of new ciphers and encryptions. This means realistically brute force
+is not a viable option for most ciphers, however I am including the code for some
+that can be argued as viable options.
+
+```{r}
+brute_force_shift <- function(x,n){
+#Brute forcing can be done in many different ways, this function here is specific
+#to shift ciphers. We are going to take our Ciphertext, x, and our modulo n, and
+#print out every result we can.
+
+  for(i in 1:n){
+    #We create a for loop to iterate through every shift possible from 1 to n.
+    #As you can see it uses the exact same function as our shift cipher does, this
+    #is because a shift cipher is very easy to crack. Like a Rubik's cube, if you
+    #shift one row around the cube, at some point you're going to get that same
+    #row back. Shift ciphers are the same so we are just going to keep shifting
+    #our ciphertext till we get our ciphertext back. Then it is up to us to
+    #figure out what the plaintext is based on all of our results.
+    encryption <- (word_num(x) + i) %% n
+    encrypted <- c()
+    q <- str_replace_all(x,"[^[:alnum:]]","")
+    q <- gsub(" ","", q)
+    for(i in 1:str_length(q)){
+      encrypted[i] <- alphabet[alphabet$number == encryption[i],1]
+    }
+    print(paste(encrypted, collapse = ""))
+    
+    #Example: x <- "khoor", n = 26
+    #our brute force will give us: LIPPS, MJQQT, NKRRU, OLSSV, PMTTW, QNUUX,
+    #ROVVY, SPWWZ, TQXXA, URYYB, VSZZC, WTAAD, XUBBE, YVCCF, ZWDDG, AXEEH, BYFFI,
+    #CZGGJ, DAHHK, EBIIL, FCJJM, HELLO, IFMMP, JQNNQ, and KHOOR.
+    #Now we can see in the results, only hello makes sense. So we know hello is
+    #the plaintext. If we count the results, we see hello is the 23rd result.
+  } 
+}
+```
+
+
