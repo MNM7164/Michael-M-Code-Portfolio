@@ -1,0 +1,331 @@
+---
+title: "Cryptography Encryption Code"
+output: html_notebook
+---
+
+This entire R-Notebook is for Cipher Encryption in English.
+
+First and foremost, in order to do any form of automated encryption or decryption we need to establish a system. Crypography uses a a letter to number conversion for encryption systems and then a number to letter conversion system for decryption. 
+
+# Conversion System
+## Set Up
+### Alphabet Database
+This section must be changed to reflect the language and alphabet you wish to use. By Default this is set to the English Alphabet.
+```{r}
+alphabet = data.frame(
+  #Create a dataframe that holds all of the Capital letters in English and their
+  #Corresponding Z_26 value in order to be able to do our ciphers
+  letter = c("A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q",
+             "R","S","T","U","V","W","X","Y","Z"),
+  number = c(0:25)
+  #Example: A=0, B=1, C=2,...Y=24,Z=25
+)
+```
+
+### Conversion
+```{r}
+let_num <- function(x){
+  #This function simply takes the inputted letter, x, and returns the numerical 
+  #value based on the previous dataframe
+   return(alphabet[alphabet$letter==x,2])
+  #For example, if we put input "J", the function returns the integer 9.
+}
+```
+
+## Automation
+```{r}
+library(stringr)
+#In order to be able to take in all cases for encryption process, meaning anyone
+#can simply type out their message normally in English and the ciphers will work
+#just fine, we need to import the stringr library that is built into R.
+#I chose to make the ciphers more accessible instead of having to have the user 
+#worry about creating acceptable plaintext to help ensure the code runs without
+#errors.
+
+word_num <- function(x){
+  #This function here is simply taking the inputted sentance and turning it into
+  #plaintext and spitting out the numerical version of our plaintext.
+  
+  number_vector = c()
+  #We create a blank vector for now. This vector will be appended later to help
+  #our output
+  
+  s <- str_replace_all(x,"[^[:alnum:]]","")
+  #We create a random local variable, s. This variable will hold our inputted 
+  #sentence or word, however, we use the str_replace_all function with the 
+  #"[^[:alnum:]]" argument to get rid of all special characters.
+  
+  p <- gsub(" ","",s)
+  #We now create p, which is only composed of words and spaces, and we remove all
+  #of the spaces using the gsub function. Our arguments may look blank, however
+  #having a space in between our quotes means that the space exists and we are 
+  #replacing it with the null value-which is the value between our second set of
+  #quotations- essentially getting rid of the spaces.
+  
+  p_split <- unlist(strsplit(p,""))
+  #Now we create another local variable, p_split. First we have the strsplit 
+  #function. This function takes our string, p, and splits it into sub-strings 
+  #based on our chosen argument, "". What we have done with this strsplit is we
+  #have taken our previous string with no spaces and split it into a giant list
+  #where every letter is an entry. Then we use the unlist function to simply
+  #flatten our list. This flattened list is our p_split, which is simply our 
+  #inputted string as a list letter by letter.
+  
+  #Example: x <- "How's your day?"
+  # s <- "Hows your day"
+  # p <- "Howsyourday"
+  # p_split <- ["H","o","w",...,"a","y"]
+  
+  for(i in 1:str_length(p)){
+    #Now we are going to create a for loop to iterate through our list and create
+    #the numerical value output vector. We use the length of our string p, to 
+    #make sure our iteration is of the correct size. If we used s, then the length
+    #would include the spaces, thus making our iteration out of bounds.
+    
+    if(str_detect(p_split[i],"[[:upper:]]")==FALSE){
+      #Now our let_num function above only works if the inputted letter is capital.
+      #So we need to check every letter. The "[[:upper:]]" argument tells us if
+      #the current letter/string is all capital or lowercase. If our letter is 
+      #lowercase we need to change it to it's capital counterpart in order for our
+      #function to work (also because that is how proper plaintext is).
+      
+      #Example: str_detect("H","[[:upper:]]") == TRUE
+      #str_detect("h","[[:upper:]]") == FALSE
+      
+      p_split[i] = toupper(p_split[i])
+      #If our letter is lowercase, then we use the function toupper, to change it
+      #to an upper (capital) letter.
+      
+      #Example: "H" = toupper("h")
+    }
+    
+    #At this point we have ensured our inputted sentence is now in proper plaintext
+    #form (as a list).
+    
+    #Example: x <- "How's your day?"
+    #p_split <- ["H","O","W",...,"A","Y"]
+    
+    number_vector <- append(number_vector,let_num(p_split[i]))
+    #Now we are going to append to our blank vector from the start of this function
+    #All we need to do here is apply our let_num function to each index of p_split
+    #and append it to our vector.
+    
+    #Example: number_vector <- c() = NULL
+    #number_vector <- append(number_vector, let_num("H")) 
+    #number_vector = c(7) = 7
+  }
+  number_vector
+  #Finally we call our number vector.
+  
+  #Example: x <- "How's your day?"
+  #number_vector = c(7,14,22,18,24,14,20,17,3,0,24)= 7 14 22 ... 3 0 24
+}
+```
+
+# Encryption
+## Special Rules
+I have the special rules section first before any of our functions that way they are all in one easy to access area and they are all loaded before the functions, that way any function that has a dependency on one of these rules it will already be loaded and ready.
+
+```{r}
+#Now were going to do some number theory
+
+GCD <- function(a,b){
+#This function will do just as it's name says, it will find us the GCD (Greatest
+#Common Division) between 2 numbers a and b. This means it will find what the
+#largest integer that divides both a and b.
+  
+  d = 1
+  n = 2
+
+#First we need to create our divisor, we are going to start with 2 because we
+#know by the identity property that 1 divides everything so we already have d=1.
+#The next integer is 2, so we start our test with n = 2.
+
+  if(b > a){
+    #This little if statement is just so that our function works no matter the
+    #order you input a and b. For example, lets say we want to know GCD(13,14).
+    
+    c=a
+    #c := 13, a := 13 and b := 14
+    a=b
+    #c := 13, a := 14 and b := 14
+    b=c
+    #c := 13, a := 14 and b := 13
+  }
+  
+  if(a %% b == 0){
+    #Now we actually start the process.
+    #First we need to consider the case where a is a multiple of b. We can tell 
+    #if this is true by modulating a by b and seeing if we get a remainder of 0.
+    #if this is true then our largest divisor is in fact b.
+    return(b)
+    
+    #Example: 12 and 4. 12 = 3*4 -> 12%%4 == 0. Meaning the GCD(12,4) is 4.
+    
+  }else{
+    #Next we need to look at the rest of the cases.
+    while(n < b){
+      #We are going to iterate over every integer between 2 and b/2.
+      #We stop once we get to b/2 because there is no number larger than b/2
+      #that can be multiplied by a number smaller than b/2 to get b. This is 
+      #because 2*b/2 = b.
+      
+      if(a%%n == 0 & b%%n==0){
+        d = n
+        n = n+1
+        #This function is really the whole GCD function. It determines if an 
+        #integer divides both a AND b. If it does then that is our divisor. Then
+        #we continue on till we have reached b/2. That way we know we will have
+        #our greatest common divisor.
+        
+        #Example: 21, 14. 21 = 3*7, 14 = 2*7 so GCD(21,14) = 7
+        
+      }else{
+        n = n+1
+      }
+    }
+    return(d) 
+    #Finally we return are GCD.
+  }
+}
+```
+
+```{r}
+#Now were going to create a very fast but very useful function called the coprime
+#function. 2 numbers are coprime with each other if they have no multiples in 
+#common. I.e their GCD is 1. 
+
+#For example, 14 and 15 are coprime because 14 has the multiples 1,2,7,14 
+#while 15 has the multiples 1,3,5,15. As we can see, they only share a multiple 
+#of 1 with each other meaning they are coprime.
+
+coprime <- function(a,b){
+  if(GCD(a,b) == 1){
+    return(TRUE)
+  }else{
+    return(FALSE)
+  }
+}
+```
+
+## Functions
+
+Since we are working with the standard English alphabet, we will always be working with n=26, however this function works for any other alphabet. If you are going to work in other Languages with different alphabets such as: German, Russian, or Mandarin, please make sure to use a different alphabet database at the start. All of the following ciphers and prior functions are able to be used no matter the language, just ensure that you change the alphabet database.
+
+```{r}
+
+shift_cipher <- function(x,k,n){
+  #Now it is time for our first ever cipher. The shift cipher. A shift cipher has
+  #3 arguments, x,k,n. x is our plaintext as a string, k is our key as an integer
+  #0<=k<n, and n is our modulo as an integer. A shift cipher is very easy to use. 
+  #As the name implies we are just going to be shifting our letters linearly.
+  #F(x) = x + b (mod n)
+  
+  encryption <- (word_num(x) + k) %% n
+  #We create a simple local variable adequately named encryption. This variable
+  #does most of the heavy lifting. Our variable here is acting as our F(x). It
+  #takes our string and turns it into the plaintext number vector using the
+  #previous function word_num and then adding our key to each value and then
+  #modulating the value by our chosen modulo.
+  
+  #Example: x <- "hello", k = 3 (Caesar Shift), n = 26 (Standard English Range)
+  #encryption <- (word_num("hello") + 3) mod 26
+  #encryption = 10 7 14 14 17
+  
+  encrypted <- c()
+  #Now we create another blank vector to be appended to later.
+  
+  q <- str_replace_all(x,"[^[:alnum:]]","")
+  q <- gsub(" ","", q)
+  #Now it may seem redundant to add these 2 functions again because we did them 
+  #inside the word_num function, and you would be right, however, we need them
+  #in order to get the correct string length to iterate through with out for loop.
+  
+  for(i in 1:str_length(q)){
+    encrypted[i] <- alphabet[alphabet$number == encryption[i],1]
+    #Now were going to do the reverse of the let_num function. We are going to 
+    #find the corresponding letter to our current encryption numbers, then append
+    #our blank vector with said letters.
+    
+    #Example: encrypted <- c() = NULL
+    #10 = "K"
+    #encrypted = c("K") = "K"
+  }
+  print(paste(encrypted, collapse = ""))
+  #Now we finally print out our vector, we use the paste function with the collapse
+  #argument set to "" meaning that every value in our vector is printed next to
+  #each other.
+  
+  #Example: x <- "hello", k = 3, n = 26
+  #encryption = 10 7 14 14 17
+  #encrypted = c("K","H","O","O","R") = "KHOOR"
+}
+```
+
+A shift cipher has as many combinations as your modulo allows for, meaning in English with n=26, there are 26 different messages you can possibly produce based on your plaintext. What this means is that anyone trying to decrypt your message has a 1 in 26 chance or ~3.85% chance to randomly decrypt your message. By hand this level of decryption by brute force can be done relatively fast, especially if you have more than 1 person working on it at once. This means our shift cipher is not secure. So let's improve our cipher.
+
+```{r}
+#Now were going to improve our shift cipher, by adding in an affine aspect. We
+#respectively call this an affine cipher. F(X) = ax + b (mod n)
+
+affine_cipher <- function(x,a,b,n){
+  #This cipher takes 4 inputs. Our plaintext string x, our coefficient a, our
+  #shift k, and our modulo n.
+  
+  if(coprime(a,n) == FALSE){
+    #First and most importantly, we determine if a and n are corpime. The reason
+    #for this is linearity. If a,n are not coprime then when decrypting our
+    #ciphertext we can get 2+ plaintexts which can confuse our recipient.
+    
+    print("Not a cipher")
+    
+  }else{
+    #Now that we have ensured that a,n are coprime, we do essentially the same
+    #process as the shift cipher, except we multiple all our values by a first
+    #then we shift them, then modulated them by n.
+    encryption <- (a*word_num(x) + b) %% n
+    encrypted <- c()
+    q <- str_replace_all(x,"[^[:alnum:]]","")
+    q <- gsub(" ","", q)
+    for(i in 1:str_length(q)){
+      encrypted[i] <- alphabet[alphabet$number == encryption[i],1]
+    }
+    print(paste(encrypted, collapse = ""))
+  }
+}
+```
+
+Now, our affine cipher can be considered barely secure- if our only way of decrypting it was by hand. An Affine cipher has as many possible outcomes as the amount of coprime numbers between 1 and n multipled by n. Meaning with n=26 we have totient(26)*26 possible combinations. This means anyone has a 1 in 312 chance or a ~0.321% chance of randomly guessing your message. However we live in the day and age of computers so we need to imporve our cipher.
+
+```{r}
+#Now lets create a cipher that does not need any math to encrypt. We are going to
+#do so by simply randomly substituing each letter for another, for example X is 
+#actually A and P is C etc. This form of cipher, named the substitution, cipher 
+#is possibly the most well known cipher as the German Enigma Machine was a
+#substitution cipher.
+
+substitution_cipher <- function(v,x){
+  #The biggest differences you can see between this cipher function and the others
+  #is there is no n to modulate by and we see this "v" argument. "v" in this case
+  #is going to be a list of the letters you would like to substitute for the
+  #the conventional A-Z order. If we use the example in the pargraph above, our
+  #"v" would be c("X", "Q", "P",...)
+  
+  alphabet$sub <- toupper(v)
+  #Now we are going to create a third column in our alphabet database to store
+  #the chosen substitution list while also making sure they are all capital.
+  
+  #Now we are going to do our standard automated encryption procedure, but we will
+  #be using the new third column from the alphabet database for our output instead
+  #of the standard first column.
+  encryption_vector = c()
+  p <- str_replace_all(x,"[^[:alnum:]]","")
+  p <- gsub(" ","",p)
+  p_split <- unlist(strsplit(p,""))
+  for(i in 1:str_length(p)){
+    encryption_vector <- append(encryption_vector,alphabet[alphabet$letter==p_split[i],3])
+  }
+  paste(encryption_vector, collapse="")
+}
+```
+
