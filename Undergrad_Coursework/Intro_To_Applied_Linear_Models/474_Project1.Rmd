@@ -1,0 +1,153 @@
+---
+title: "Hitting for Wins: Analyzing how offensive stats predict team success in MLB"
+author: "Michael Masterton"
+date: "2025-10-12"
+output: pdf_document
+---
+
+# Abstract
+
+After confirming low multicollinearity between predictors (VIF < 5 for both OBP and SLG), a multiple linear regression model was fitted to predict the number of wins for an MLB team based on the teams On-Base Percentage, Slugging percentage, and their interaction. The model was statistically significant overall (F(3,26)=20.93, p<0.001), with an $R^2$ of 0.7077, which indicates that around 71% of the variance in team's wins were explained by this model. 
+
+All Model coefficients were statistically significant at the $\alpha = 0.05$ level: OBP (p = 0.009), SLG (p = 0.018), OBP:SLG (p = 0.024). 
+
+The significance of the interaction term suggests that the impact of OBP on teams success varies depending on a team's SLG. Specifically, a team with both a high OBP and SLG tend to achieve more wins than teams that are strong in only one category thus reinforcing the idea that power AND contact are critical to success in modern baseball.
+
+# Intro
+
+In this project, I set out to explore which commonly used offensive statistic is most predicitive of a team's success in Major League Baseball. While the most direct predictor of the game's outcome is the number of runs scored, I chose to take it a step further and see which of the more complex or "advanced" statistics would best explain a team's performance over the season. That narrowed down my choices to three common metrics: On-Base Percentage (OBP), Slugging (SLG), and On-Base + Slugging (OPS). 
+
+OBP measures how often a team gets on base, so they sum: Hits, Bases on Balls/Walks, and Hit by Pitch and divide that by the sum of: At Bats, Basses on Balls/Walks, Hit by Pitch, and Sacrifice Flies. SLG reflects a team's ability to generate power by measuring total bases per At Bat. OPS is simply the sum between the 2 decimals and is commonly used as a catch-all. 
+
+Once I had chosen the 3 variables I wanted to compare, I needed to find data so I chose to look at last seasons data. I have used the Sports Reference site in my sports analytics class. I knew about their college football, college basketball, and MLB sections. I found the 2024 Team Standard Batting Excel Workbook file and downloaded that and turned it into a CSV so I could load it into RStudio for preprocessing, modeling, and visualization.
+
+# Methodology
+
+After loading in the CSV file I noticed that the dataset had 2 summary rows: one for the league averages and one for the total of each column. These rows were removed as they represented statistical summaries rather than individual teams. Inclusion of these rows would have violated the assumption of idependent observations and skewed the results. 
+
+Next, I add two additional columns to the data set: Wins and League. Win totals for each team were sourced directly from the MLB site, and league affilitation (National League "NL" and American League "AM) were matched appropriately for each team.
+
+With the data set cleaned and ready, I conducted a series of regression model comparisons:
+
+1. Single variable models. I first tested models using either OBP, SLG, or OPS alone to asses which was the better individual predictor of team wins.
+
+2. Additive Model. I then fit a multiple linear regression model using OBP and SLG as seperate predictors to determine if seperating the components of OPS would improve the model's performance.
+
+3. Interaction Model. Finally I tested an interaction model to explore whether the effect of OBP on wins varied depending on a team's SLG.
+
+To evaluate model quality and validity, I checked for multicollinearity using Variance Inflaction Factor (VIF), examined diagnostic plots for violations of linear regression assumptions, and used the Akaike Information Criterion (AIC) to compare model fit. The model with the lowest AIC score was selected to be the best model.
+
+# Results
+
+```{r libraries}
+library(tidyr)
+library(ggplot2)
+library(car)
+library(dplyr)
+```
+
+```{r data ETL}
+dat <- read.csv("sportsref_download(6).csv")
+dat <- dat[1:30,]
+dat$Wins <- c(89,89,91,81,83,41,77,92,61,86,88,86,63,98,62,93,82,89,94,69,95,76,93,85,80,83,80,78,74,71)
+dat$League <- c("NL", "NL", "AM", "AM", "NL","AM","NL", "AM", "NL", "AM","AM", "AM", "AM", "NL", "NL","NL", "AM", "NL","AM","AM","NL","NL","NL","AM","NL","NL","AM","AM","AM","NL")
+dat$League <- as.factor(dat$League)
+```
+
+```{r modeling}
+model1 <- lm(Wins ~ OBP, dat)
+model2 <- lm(Wins ~ SLG, dat)
+model3 <- lm(Wins ~ OBP*SLG, dat)
+model5 <- lm(Wins ~ OBP+SLG, dat)
+model6 <- lm(Wins ~ OPS, dat)
+```
+
+## 1  
+
+My first comparison was seeing if any of the predictors performed better as a standalone predictor of team wins. 
+
+```{r model comparison}
+summary(model1)
+summary(model2)
+summary(model6)
+```
+
+All 3 models are significant overall and explained a simliar proportion of the variance of in team wins. While there are slight differences in the $R^2$ values, each metric on it's own are reasonably strong predictors, which was expected.
+
+## 2
+
+Next, I compared the additive model with OPS.
+
+```{r additive comparison}
+summary(model5)
+```
+
+Both the additive model and the OPS as a sinlge predictor explain nearly identical variation in team wins. This makes sense mathematically, since OPS is simple the sum of OBP and SLG, and the regression treats them nearly interchangable when no interaction is included.
+
+To ensure the additive model wasn't compromised by multicollinearity between OBP and SLG, I calculated the VIF.
+
+```{r VIF}
+vif(model5)
+```
+
+Both have VIF values below 5, indicating low multicollinarity and supporting the inclusion of OBP and SLG as seperate predictors in the same model.
+
+## 3
+
+I then tested the interaction model between OBP and SLG.
+
+```{r interaction model}
+summary(model3)
+```
+
+All of the terms in the interaction model are statistically significant, including the interaction term OBP:SLG. This suggests that the effect of OBP on team wins depends on the level of SLG and vice versa.
+
+To formally compare models, I used AIC.
+
+```{r AIC}
+AIC(model1, model2, model3, model5, model6)
+```
+
+The interaction model has the lowest AIC score of the 5, which indicates that it is the best-fitting model amongst them. This reinforces the idea that incorporating the interaction between OPB and SLG improves predicitive performance over using either metric alone or in the additive form.
+
+Finally, I examined residual plots to verify the assumptions of linear regressions.
+
+```{r model diagnostics}
+par(mfrow = c(2,2))
+plot(model3)
+```
+
+1. The residual vs fitted plot shows residuals centered around 0 with no clear pattern, supporting assumptions of linearity and homoscedasticity.
+2. The Q-Q plot displayed residuals roughly along the line, indicating that the normality assumption also holds.
+
+To better understand the interaction between OBP and SLG, I visualized the predicted wins at various combination of OBP and SLG level.
+
+```{r graph settings}
+OBP_range <- seq(min(dat$OBP),max(dat$OBP),length.out = 100)
+SLG_level <- quantile(dat$SLG, probs=c(0.25,0.5,0.75))
+plot_data <- expand.grid(OBP = OBP_range, SLG = SLG_level)
+plot_data$Predicted_Wins <- predict(model3,newdata = plot_data)
+plot_data$SLG <- factor(plot_data$SLG, labels = c("Low SLG", "Med SLG", "High SLG"))
+```
+
+```{r graph}
+ggplot(plot_data, aes(x=OBP, y=Predicted_Wins,color = SLG)) + geom_line(size=1.2) + labs(title = "Interaction Effect of OBP and SLG on Team Wins", x = "On-Base Percentage (OBP)", y = "Predicted Wins", color = "SLG Level") + theme_minimal()
+```
+
+This plot clearly illustrates that higher OBP results in more predicted wins, but the slope becomes steeper as SLG increases. In other words, OBP becomes more impactful when SLG is also high.
+
+# Conclusion
+
+This project set out to determine which offensive baseball stat - OBP, SLG, or OPS - best predicts a MLB team's total wins. After cleaning and augmenting data from the 2024 MLB season, multiple regression models were built and compared using both stat significance and model selection criteria.
+
+While OBP, SLG, and OPS each performed well individually, the interaction model inlcuding both OBP and SLG emerged as the best fitting model. The signifcant interaction term indicates that OBP and SLG do not act independently and that their combined effect on team wins is greater than the sum of their parts. 
+
+Diagnostic plots confirmed that key assumptions of linear regression (linearity, homoscedasticity, and normality) were met, and low VIF scores ruled out multicollinearity as a concern. Based on the model's strong fit and statistical validity, we can conclude that a team's offensive profile is a strong predictor of their success across a season.
+
+Future research could incorporate pitching and fielding statistics, evaluating year over year consistency, or extend the model to predict playoff outcomes. Additionally, moving to a generalized linear model framework or using cross validation techniques could provide more robust predictive power beyond this single-season dataset.
+
+# References
+
+2024 MLB Data CSV: https://www.baseball-reference.com/leagues/majors/2024.shtml#all_teams_standard_batting 
+
+2024 MLB Standings: https://www.mlb.com/standings/league/2024

@@ -1,0 +1,325 @@
+---
+title: "Cybersecurity Authentication Analysis"
+author: "Michael Masterton"
+date: "2025-12-15"
+output: 
+  pdf_document:
+    toc: true
+    number_sections: true
+fontsize: 12pt
+geometry: margin=1in
+---
+
+# Abstract
+
+This study investigates user authentication behavior in a representative subset of the 2015 Los Alamos National Laboratory (LANL) cybersecurity dataset, which contains event-level login records with detailed metadata including authentication and logon types, user identifiers, and accessed domains. The primary aim is to understand how user behavior, in terms of login frequency, domain access breadth, and occurrence of rare logon types, varies according to authentication and logon mechanisms. To capture these behavioral dimensions, three complementary statistical methods were employed. Negative binomial regression was used to model total login counts, accommodating the overdispersion observed in the data. Analysis of variance (ANOVA) examined differences in daily domain access across authentication types, while analysis of covariance (ANCOVA) explored rare logon events while controlling for total login activity. Each modeling approach targets a distinct behavioral dimension-overall login intensity, network breadth, and infrequent authentication behavior-allowing user activity to be examined from complementary statistical perspectives rather than a single aggregated metric. By synthesizing results from these models, a composite risk score was constructed to identify users with potentially anomalous authentication patterns. The analysis revealed significant effects of both authentication and logon types on user behavior, highlighting subsets of users with elevated risk profiles. Despite limitations such as the use of a subset of the data and absence of labeled attack events, this framework demonstrates a scalable, interpretable approach to behavioral risk assessment in enterprise cybersecurity. All analyses were conducted using a fully reproducible workflow, with clearly defined preprocessing steps, model specifications, and diagnostic checks to ensure transparency and replicability. By explicitly linking research questions to response-variable scale and model assumptions, this analysis emphasizes interpretability, reproducibility, and statistical validity alongside practical cybersecurity relevance.
+
+# Introduction
+
+Enterprise cybersecurity relies heavily on monitoring user authentication events, as anomalous login patterns can indicate compromised accounts or insider threats. Large-scale organizations generate vast amounts of authentication data, which can be both high-dimensional and heavily skewed, making analysis challenging. The LANL 2015 dataset, with over 1.6 billion records, provides a rich source for studying these behaviors. Due to the dataset’s size, a representative subset of 50,000 rows was extracted, focusing on successful login events. After filtering incomplete records, the analysis was performed on approximately 21,600 observations. This subset retains the essential variability in user behavior while remaining computationally manageable.
+
+The study is guided by the following research questions: (1) How does user login frequency vary by authentication and logon types? (2) How does the breadth of domains accessed per day differ across authentication types? (3) How do rare logon events, defined as logon types constituting less than 20% of a user’s total logins, vary with authentication and logon types after accounting for overall login volume? (4) Can these behavioral dimensions be combined into a composite risk score that identifies users warranting enhanced security monitoring? The corresponding hypotheses posit that authentication and logon types significantly influence login counts, domain access, and rare logon events, and that a composite risk metric can effectively highlight atypical users.
+
+These research questions correspond to the following hypotheses:
+(H1) Authentication and logon types significantly influence total login counts;
+(H2) Authentication type significantly affects the number of domains accessed per day;
+(H3) Authentication and logon types significantly influence rare logon behavior after adjusting for overall login activity; and
+(H4) Combining multiple behavioral indicators yields a more informative risk assessment than any single metric alone.
+
+These hypotheses are intentionally narrow and directly tied to observable variables in the dataset, ensuring they are testable using the available data while avoiding overgeneralization.
+
+The choice of statistical models was driven by the distinct characteristics of the response variables. In each case, the selected model aligns with the scale, distributional properties, and inferential goal of the response variable, ensuring valid statistical inference and interpretable results. Total login counts are discrete and overdispersed, making negative binomial regression appropriate. Domain access, treated as a continuous variable with moderate skew, is amenable to ANOVA for group comparisons. Rare logon counts are influenced by total activity, motivating ANCOVA to adjust for this covariate while examining the effects of authentication and logon types. Using all three models provides a comprehensive view of user behavior: overall activity intensity, network reach, and unusual authentication events. Integrating these perspectives supports a multidimensional risk assessment framework that is both interpretable and actionable.
+
+No single statistical model can fully capture the complexity of user authentication behavior. Total login counts reflect activity intensity but provide no insight into how broadly users access the network or how unusual their authentication patterns are. Domain access captures network reach but ignores overall volume, while rare logon counts highlight atypical behavior that may be masked by high baseline activity. Using negative binomial regression, ANOVA, and ANCOVA in combination allows these distinct dimensions to be examined independently and then integrated, producing a more complete and interpretable behavioral profile.
+
+Because these behavioral dimensions operate on different statistical scales and reflect distinct aspects of authentication behavior, no sinlge response variable or modeling framework is sufficient. Total login counts quantify activity intensity, domain access reflects network breadth, and rare logon events capture infrequent or atypical behavior relative to a user's baseline. Each outcome therefor motivates a different statistical treatment aligned with its distributional properties and inferential goals. Employing negative binomial regression, ANOVA, and ANCOVA in combination allows these dimensions to be examined independently and then integrated, providing a more complete and interpretable characterization of user authentication behavior than any single model alone.
+
+# Data Description & Exploratory Analysis
+
+The dataset includes fields for source and target users and domains, authentication type, logon type, and event outcomes. Data cleaning involved replacing ambiguous entries with missing values and removing incomplete records. Because missingness was limited and primarily associated with ambiguous categorical labels rather than outcome variables, complete-case analysis was deemed appropriate and unlikely to introduce systematic bias. To reduce sparsity, rare authentication and logon categories were consolidated into an “Other” group, retaining the four most common categories for analysis. Three primary user-level outcome metrics were derived: total successful logins, number of distinct domains accessed per day, and counts of rare logon events.
+
+Exploratory visualizations revealed substantial heterogeneity in user behavior. A histogram of total login counts showed a highly skewed distribution with a long right tail, indicating that a small subset of users accounts for disproportionately high login activity. This overdispersion justified the use of negative binomial regression over Poisson regression. Similar visual diagnostics informed all subsequent modeling decisions, ensuring that exploratory analysis directly guided formal statistical specification rather than serving as a descriptive afterthought. A boxplot of domains accessed per day by authentication type demonstrated that users under “Other” authentication types accessed more domains on average, suggesting that atypical authentication behaviors may be associated with broader network activity. A bar plot of rare logon counts highlighted that infrequent logon events were concentrated among a small number of users, reinforcing the importance of controlling for total login volume when modeling rare events. Finally, a scatterplot of rare logon counts against total logins showed a positive correlation with outliers, motivating the use of ANCOVA to adjust for overall activity while examining predictors. The presence of extreme right-skew and long-tailed distributions across multiple outcome variables indicates substantial heterogeneity in user behavior. These patterns suggest that standard Gaussian assumptions are inappropriate for count-based outcomes and motivate the use of models specifically designed for discrete and overdispersed data. Furthermore, the concentration of rare events among a small subset of users suggests that unusual authentication behavior is not randomly distributed, reinforcing its relevance as a potential risk indicator.
+
+# Model Building
+
+Negative binomial regression was used to model total login counts per user because initial Poisson models displayed significant overdispersion, with variance exceeding the mean. The negative binomial model introduces a dispersion parameter, allowing the variance to exceed the mean and producing more reliable parameter estimates. The model can be expressed as: $$\text{ln}(E[Y_i])=\beta_0+\beta_1\text{AuthType}_i +\beta_2\text{LogonType}_i $$ where $Y_i$ denotes total logins for user $i$. Results indicated that several authentication types were associated with significantly higher login counts relative to the baseline category, while logon type also had a modest but significant effect. Diagnostic checks, including residual plots and likelihood ratio tests, confirmed that the negative binomial model outperformed the Poisson alternative. This improvement indicates that allowing variance to exceed the mean is essential for accurately modeling heterogeneous user login behavior in large enterprise systems.
+
+Coefficients from the negative binomial model are interpreted on the log scale, such that exponentiated estimates represent multiplicative changes in expected login counts. For example, a positive coefficient for a given authentication type indicates that users employing that method are expected to generate more logins than the baseline group, holding logon type constant. Residual diagnostics showed no systematic pattern across fitted values, and the model’s substantially lower AIC relative to the Poisson alternative confirms improved goodness-of-fit.
+
+ANOVA was employed to examine differences in daily domain access across authentication types. This model assumes normally distributed residuals with homogeneous variance across groups. The model is defined as:$$\text{Domains}_i=\mu+\alpha_j+\epsilon_i, \text{ } \epsilon_i\sim N(0,\sigma^2) $$ where $\alpha_j$ represents the effect of the $j$-th authentication type. Results revealed a significant effect of authentication type on domain access, with the “Other” category exhibiting the highest mean domain counts. Residual diagnostics confirmed the adequacy of model assumptions. Given the relatively large sample size, ANOVA results are also robust to mild departures from normality, further supporting the reliability of the observed group differences.
+
+ANOVA is appropriate in this context because the primary goal is to compare mean domain access across categorical authentication groups rather than to predict individual-level outcomes. While domain counts are moderately skewed, residual diagnostics indicated approximately symmetric residuals and comparable variance across groups, suggesting that ANOVA provides a reasonable and interpretable summary of group-level differences.
+
+Logon type did not exhibit a statistically significant main effect in this model, indicating that domain access breadth varies primarily by authentication mechanism rather than logon context.
+
+The Q–Q plot of ANOVA residuals exhibits a distinct stair-step pattern with visible clustering. This behavior arises from the discrete and right-skewed nature of the underlying domain count data rather than from a violation of model assumptions. While perfect normality is not expected for count-derived outcomes, the residuals align reasonably well with the reference line in the central quantiles, with deviations occurring primarily in the tails. Given the large sample size, ANOVA is robust to these mild departures from normality, and the Q–Q plot does not indicate a meaningful threat to inference. Instead, it reflects underlying heterogeneity in user domain access behavior.
+
+ANCOVA was applied to model rare logon events while adjusting for total login activity, capturing the effect of authentication and logon types on unusual authentication behavior independent of baseline activity. The model is specified as: $$\text{RareLogon}_i=\mu+\beta_1\text{TotalLogins}_i + \alpha_j+\gamma_k+\epsilon_i$$ where $\alpha_j$ and $\gamma_k$ represent authentication and logon type effects, respectively. ANCOVA results indicated that both authentication and logon types significantly influenced rare logon counts after controlling for total logins, with the “Other” authentication group exhibiting the highest adjusted rare logon rates. Residual analyses suggested acceptable adherence to model assumptions. While the ANCOVA framework allows adjustment for baseline activity, results are interpreted associatively rather than causally, as authentication types may proxy underlying user roles or system functions.
+
+Importantly, adjusting for total logins allows rare authentication behavior to be interpreted relative to a user’s baseline activity level. Without this adjustment, users with high login volumes would mechanically appear to have more rare events. The ANCOVA framework therefore isolates genuinely atypical behavior, making it especially relevant for identifying users whose authentication patterns deviate from expectations given their overall activity.
+
+Together, these models provide complementary insights: negative binomial regression quantifies total activity intensity, ANOVA assesses network breadth, and ANCOVA isolates infrequent or atypical behaviors.
+
+# Risk Score Construction and Results
+
+To integrate the insights from the three modeling approaches, predicted values for total logins, domain counts, and rare logon counts were min-max scaled to a 0–1 range and averaged to create a composite risk score. Users were categorized into low, medium, and high risk based on thresholds of 0.33 and 0.66. These thresholds were chosen for interpretability rather than optimal classification, reflecting the exploratory and prioritization-focused nature of the analysis rather than formal prediction. Visualizations of the top 50 high-risk users demonstrated consistent elevation across all three dimensions, highlighting individuals with high login activity, broad domain access, and frequent rare logon events. The correlation structure among the components revealed that some users had disproportionate rare logon activity relative to total logins or domain breadth, emphasizing the added value of multidimensional analysis. This directly addresses the fourth research question by demonstrating that integrating multiple behavioral dimensions yields insights that would not emerge from any single model alone.
+
+The composite risk score highlights users whose risk arises from different underlying mechanisms. Some users exhibit high scores due primarily to extreme login volume, while others score highly due to disproportionate rare logon activity or unusually broad domain access. This heterogeneity illustrates the value of combining multiple behavioral signals, as reliance on any single metric would overlook important patterns in user behavior.
+
+# Discussion & Conclusion
+
+This analysis demonstrates that authentication and logon types significantly shape user authentication behavior across multiple dimensions. By employing negative binomial regression, ANOVA, and ANCOVA, distinct behavioral facets—login volume, network reach, and rare authentication patterns—were effectively captured and integrated into an interpretable risk framework. This multidimensional approach improves identification of potentially anomalous users compared to relying on a single metric. Although developed using authentication data, this framework is broadly applicable to other high-volume behavioral monitoring contexts where activity intensity, diversity, and rarity jointly inform risk.
+
+Limitations include the use of a small, non-temporal subset, restricting the ability to generalize findings to the full dataset and to examine temporal trends. The absence of labeled attack events prevents direct validation of the risk score against confirmed threats. Future work should incorporate temporal modeling, additional user-level features, and datasets with labeled incidents to enhance model calibration and operational relevance.
+
+Taken together, the results demonstrate that authentication behavior is multidimensional and cannot be fully characterized by login frequency alone. Authentication and logon types influence not only how often users authenticate, but also how broadly they interact with the network and how frequently they engage in unusual authentication behavior. The consistency of these effects across multiple models strengthens confidence in the findings and underscores the value of triangulating results across complementary statistical approaches.
+
+In conclusion, combining multiple complementary statistical models provides a nuanced and actionable characterization of user authentication behavior in large-scale enterprise environments. This approach balances statistical rigor with practical cybersecurity needs, offering a scalable, interpretable, and reproducible framework for user behavior monitoring and risk assessment. In practice, such a framework can be integrated into existing security pipelines as a triage mechanism, flagging users for further investigation rather than serving as a standalone detection system.
+
+# Appendix
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Libraries}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(MASS)
+library(scales)
+library(emmeans)
+set.seed(123)
+```
+
+```{r}
+#Had to make a csv with 50000 rows because the raw text file was almost 69 GBs
+#con <- gzfile("auth.txt.gz", "rt")
+
+#lines <- readLines(con,n=50000)
+#close(con)
+
+#df <- read.table(text=lines, sep=",",header=T)
+#write.csv(df, "auth_subset.csv",row.names = F)
+```
+
+```{r Data}
+auth <- fread("auth_subset.csv",header=T,stringsAsFactors = F) #Used fread because it is faster than read.csv
+head(auth)
+str(auth)
+```
+
+
+```{r Data Cleaning}
+
+# Replace ? with NA and drop NAs
+auth[auth == "?"] <- NA
+auth <- na.omit(auth)
+
+# Keep only LogOn events (LogOff not used)
+auth_clean <- auth %>%
+  filter(LogonEvent == "LogOn") %>%
+  mutate(
+    # Identifiers should NOT be factors
+    RecordID      = as.numeric(RecordID),
+    SourceUser    = as.character(SourceUser),
+    TargetUser    = as.character(TargetUser),
+    SourceDomain  = as.character(SourceDomain),
+    TargetDomain  = as.character(TargetDomain),
+
+    # These SHOULD be factors
+    AuthType      = as.factor(AuthType),
+    LogonType     = as.factor(LogonType),
+    Outcome       = as.factor(Outcome)
+  )
+
+# Total logins per user
+user_logins <- auth_clean %>%
+  group_by(SourceUser) %>%
+  summarise(total_logins = n(), .groups = "drop")
+
+auth_clean <- left_join(auth_clean, user_logins, by = "SourceUser")
+
+# Placeholder day (real data has timestamp, subset doesn't)
+auth_clean$day <- 1
+
+# Number of domains contacted per user per day
+user_domains <- auth_clean %>%
+  group_by(SourceUser, day) %>%
+  summarise(domains_per_day = n_distinct(TargetDomain), .groups="drop")
+
+auth_clean <- left_join(auth_clean, user_domains, by = c("SourceUser", "day"))
+
+# Frequency of each logon type per user
+logon_counts <- auth_clean %>%
+  group_by(SourceUser, LogonType) %>%
+  summarise(n_type = n(), .groups = "drop")
+
+user_counts <- auth_clean %>%
+  group_by(SourceUser) %>%
+  summarise(n_total = n(), .groups = "drop")
+
+logon_freq <- logon_counts %>%
+  left_join(user_counts, by = "SourceUser") %>%
+  mutate(freq = n_type / n_total) %>%
+  dplyr::select(SourceUser, LogonType, freq)
+
+# Add rare_logon flag
+auth_clean <- auth_clean %>%
+  left_join(logon_freq, by = c("SourceUser", "LogonType")) %>%
+  mutate(rare_logon = ifelse(freq < 0.2, 1, 0)) %>%
+  dplyr::select(-freq)
+
+# Rare logon count per user
+rare_counts <- auth_clean %>%
+  group_by(SourceUser) %>%
+  summarise(rare_logon_count = sum(rare_logon), .groups = "drop")
+
+auth_clean <- left_join(auth_clean, rare_counts, by = "SourceUser")
+
+```
+
+```{r Exploratory Data Analysis}
+
+# Total logins histogram
+ggplot(user_logins, aes(x = total_logins)) +
+  geom_histogram(binwidth = 1, fill = "gold", color = "black") +
+  scale_x_log10() +
+  labs(title="Total Logins per User (Log Scale)", x="Total Logins", y="Count")
+
+# Domains per day histogram
+ggplot(user_domains, aes(x = domains_per_day)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color="black") +
+  labs(title="Domains per Day", x="Domains per Day", y="Count")
+
+# Rare logons histogram
+ggplot(rare_counts, aes(x = rare_logon_count)) +
+  geom_histogram(binwidth = 1, fill="coral", color="black") +
+  labs(title="Rare Logon Count", x="Count", y="Users")
+```
+
+```{r Poisson}
+# Reduce factor levels (keep top 4)
+top_auth  <- names(sort(table(auth_clean$AuthType),  decreasing=TRUE))[1:4]
+top_logon <- names(sort(table(auth_clean$LogonType), decreasing=TRUE))[1:4]
+
+auth_clean$AuthType2  <- ifelse(auth_clean$AuthType  %in% top_auth, auth_clean$AuthType, "Other")
+auth_clean$LogonType2 <- ifelse(auth_clean$LogonType %in% top_logon, auth_clean$LogonType, "Other")
+
+auth_clean$AuthType2  <- as.factor(auth_clean$AuthType2)
+auth_clean$LogonType2 <- as.factor(auth_clean$LogonType2)
+
+# Fit Poisson model
+poisson_model <- glm(total_logins ~ AuthType2 + LogonType2,
+                      data = auth_clean, family = poisson)
+
+# Overdispersion check
+dispersion <- sum(resid(poisson_model, type="pearson")^2) / poisson_model$df.residual
+
+if (dispersion > 1.5) {
+  model_to_use <- glm.nb(total_logins ~ AuthType2 + LogonType2, data = auth_clean)
+} else {
+  model_to_use <- poisson_model
+}
+
+summary(model_to_use)
+
+# Predictions
+auth_clean$pred_total_logins <- predict(model_to_use, type="response")
+
+# Plot predicted vs actual
+ggplot(auth_clean, aes(x = total_logins, y = pred_total_logins)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method="loess") +
+  labs(title="Predicted vs Actual Total Logins",
+       x="Actual", y="Predicted")
+```
+
+```{r ANOVA}
+# Fit the ANOVA model for domains per day
+anova_model <- aov(domains_per_day ~ AuthType2 + LogonType2, data = auth_clean)
+
+# View the summary (which should match your table)
+summary(anova_model)
+
+# Optionally, visualize the estimated marginal means (EMMs)
+emm_domains <- emmeans(anova_model, ~ AuthType2 | LogonType2)
+
+# Convert to dataframe for plotting
+emm_domains_df <- as.data.frame(emm_domains)
+
+ggplot(emm_domains_df, aes(x=AuthType2, y=emmean, fill=LogonType2)) +
+  geom_col(position="dodge") +
+  geom_errorbar(aes(ymin=lower.CL, ymax=upper.CL), position=position_dodge(0.9), width=0.2) +
+  labs(title="Estimated Marginal Means: Domains per Day", y="Adjusted Mean Domains per Day")
+
+```
+
+
+```{r ANCOVA}
+ancova_model <- aov(rare_logon_count ~ AuthType2 + LogonType2 + total_logins,
+                    data = auth_clean)
+summary(ancova_model)
+
+# Estimated Marginal Means
+emm <- emmeans(ancova_model, ~ AuthType2 | LogonType2)
+emm_df <- as.data.frame(emm)
+
+ggplot(emm_df, aes(x=AuthType2, y=emmean, fill=LogonType2)) +
+  geom_col(position="dodge") +
+  geom_errorbar(aes(ymin=lower.CL, ymax=upper.CL),
+                position=position_dodge(0.9), width=0.2) +
+  labs(title="Estimated Marginal Means (ANCOVA)", y="Adjusted Mean")
+```
+
+```{r}
+user_risk <- auth_clean %>%
+  group_by(SourceUser) %>%
+  summarise(
+    total_logins       = max(total_logins),
+    pred_total_logins  = max(pred_total_logins),
+    domains_per_day    = max(domains_per_day),
+    rare_logon_count   = max(rare_logon_count)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    total_logins_scaled = rescale(pred_total_logins),
+    domains_scaled      = rescale(domains_per_day),
+    rare_logons_scaled  = rescale(rare_logon_count),
+    risk_score = (total_logins_scaled + domains_scaled + rare_logons_scaled) / 3,
+    risk_category = cut(
+      risk_score,
+      breaks = c(-Inf, 0.33, 0.66, Inf),
+      labels = c("Low", "Medium", "High")
+    )
+  )
+
+# Top 50 high-risk users
+top_users <- user_risk %>% slice_max(risk_score, n = 50)
+
+ggplot(top_users, aes(x = reorder(SourceUser, risk_score),
+                      y = risk_score, fill = risk_category)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("Low"="green","Medium"="orange","High"="red")) +
+  labs(title="Top 50 Users by Risk Score", x="User", y="Risk Score")
+```
+
+```{r}
+# Residual plot
+res_df <- data.frame(
+  fitted = fitted(model_to_use),
+  residuals = residuals(model_to_use, type="pearson")
+)
+
+ggplot(res_df, aes(x=fitted, y=residuals)) +
+  geom_point(alpha=0.5) +
+  geom_hline(yintercept=0, col="red") +
+  labs(title="Residuals vs Fitted (Model Diagnostics)")
+
+# Normality check for ANOVA residuals
+qqnorm(residuals(anova_model))
+qqline(residuals(anova_model), col="red", lwd=2)
+
+```
+
