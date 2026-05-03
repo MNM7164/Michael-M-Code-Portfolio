@@ -1,0 +1,48 @@
+---
+title: "Collatz Conjecture"
+author: "Michael Masterton"
+output: html_notebook
+---
+
+This notebook is showcasing how to code the collatz-conjecture in both Python and R
+
+```{python}
+def py_collatz(x):
+  l = [x]
+  #Create a list with the original value
+  while x > 1:
+    #Repeat till we reach a value of 1
+    if (x%2 == 0):
+      x = x/2
+      x=int(x)
+      l.append(x)
+      #If our value is even, divide by 2 and added it to the list
+    else:
+      x *= 3
+      x += 1
+      x=int(x)
+      l.append(x)
+      #If our value is odd then multiply by 3, then add 1, then add to the list
+  return(l)
+```
+
+```{r}
+rcollatz <- function(x){
+  l <- c(x)
+  #Create a vector with our original value
+  while(x>1){
+    #Repeat till we reach a value of 1
+    if(x%%2 == 0){
+      x <- x/2
+      l <- append(l,x)
+      #If our valye is even, divide by 2 then add to the vector
+    }else{
+      x <- x*3
+      x <- x+1
+      l <- append(l,x)
+      #If our value is odd then multiple by 3, then add 1, then add to the vector
+    }
+  }
+  print(l)
+}
+```

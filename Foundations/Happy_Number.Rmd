@@ -1,0 +1,65 @@
+---
+title: "Happy Numbers"
+Author: "Michael Masterton"
+output: html_notebook
+---
+
+This notebook is showcasing how to determine if a number is a happy number or not in both Python and R. 
+
+```{python}
+def happy_number(x):
+  original = x
+  cycle = [original]
+  #Create our list showing the cycle used to determine if the number is happy or not
+  while x!=1:
+    #The number is happy if it reaches 1
+    digits = [int(n) for n in str(x)]
+    #First we turn x into a string, then we loop through each character in the string
+    #then turn each character back into an integer and add it to a list
+    digits = [d**2 for d in digits]
+    #Now inside that list, we square each value
+    x = sum(digits)
+    #Now we take the sum of those values and we have our new number
+    
+    if x in cycle:
+      #If the new number is already in the list then we know its going to loop
+      #thus never reaching 1 therefore is not happy
+      return False,cycle
+    else:
+      cycle.append(x)
+      
+  return True, cycle
+```
+
+```{r}
+happy_number <- function(x){
+  og <- x
+  cycle <- c(og)
+  #Create a vector showing the cycle used to determine if the number is happy or not
+  while(x!=1){
+    #The number is happy if it reaches 1
+    digit <- c()
+    #Create a blank vector to store our individual digits in
+    j <- nchar(x)
+    #Count how many digits we have
+    for(i in 1:j){
+      s <- (x%/%10^(i-1))%%10
+      #Start by finding what value is in each place value
+      s <- s^2
+      #Square that value
+      digit <- append(digit,s)
+      #Add it to our vector
+    }
+    x <- sum(digit)
+    #Now we take the sum of that vector as our new number
+    
+    if(x %in% cycle){
+      #Check to see if the number is already in the list or not
+      return(list(result = FALSE, cycle = cycle))
+    }else{
+      cycle <- append(cycle, x)  
+    }
+  }
+  return(list(result = TRUE, cycle = cycle))
+}
+```

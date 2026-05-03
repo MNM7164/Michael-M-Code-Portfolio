@@ -1,0 +1,53 @@
+---
+title: "Narcissistic number"
+Author: "Michael Masterton"
+output: html_notebook
+---
+
+This is notebook is showcasing how to determine a narcissistic number in both Python and R
+
+```{python}
+def narc_num(x):
+  digits = [int(n) for n in str(x)]
+  #First we turn x into a string, then we loop through each character in the string
+  #then turn each character back into an integer and add it to a list.
+  i = 0
+  j = len(digits)
+  #J is the number of digits x has (100 has 3 digits for example)
+  for i in range(j):
+    digits[i] = digits[i]**j
+    # Now we raise that number in the list to the power based on how many digits 
+    # there are (1^3 for 100 for example)
+  if sum(digits) == x:
+    return(True)
+  else:
+    return(False)
+```
+
+```{r}
+library(stringr)
+narcnum <- function(x){
+  digi <- c()
+  #Create a blank vector
+  i = 1
+  j <- nchar(x)
+  #J is the number of digits x has (100 has 3 digits for example)
+  for(i in 1:j){
+    s <- (x%/%10^(i-1))%%10
+    #S starts by finding what value is in each place value (0 is in the ones for
+    #a hundred and for the tens as well for example)
+    s <- s^j
+    #Then we raise that number to the power based on how many digits there are
+    #(1^3 for 100 for example)
+    digi <- append(digi,s)
+    #Add that value into the vector
+  }
+  summ <- sum(digi)
+  #Now lets find the sum of the vector
+  if(summ == x){
+    return(TRUE)
+  }else{
+    return(FALSE)
+  }
+}
+```

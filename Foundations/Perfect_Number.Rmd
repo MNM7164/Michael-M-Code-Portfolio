@@ -1,0 +1,46 @@
+---
+title: "Perfect Number"
+Author: "Michael Masterton"
+output: html_notebook
+---
+
+This notebook is showcasing how to determine a perfect number in both Python and R
+
+```{python}
+def perf_num(x):
+  if x > 0:
+    prop_div = []
+    i = 1
+    while i < x:
+      if x%i == 0:
+        prop_div.append(i)
+        i+=1
+      else:
+        i+=1
+    if sum(prop_div) == x:
+      return(True)
+    else:
+      return(False)
+```
+
+```{r}
+perf_num <- function(x){
+  if(x >0){
+    prop_div = c()
+    i = 1
+    while(i<x){
+      if(x%%i == 0){
+        prop_div <- append(prop_div,i)
+        i = i+1
+      }else{
+        i = i+1
+      }
+    }
+    if(sum(prop_div) == x){
+      return(TRUE)
+    }else{
+      return(FALSE)
+    }
+  }
+}
+```

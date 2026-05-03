@@ -1,0 +1,74 @@
+---
+title: "Morse Code Conversion"
+author: "Michael Masterton"
+output: html_notebook
+---
+
+```{r}
+library(stringr)
+library(tidyr)
+
+alphabet = data.frame(
+  #Create a dataframe that holds all of the Capital letters in English as well as
+  #0-9and their corresponding morse codes
+  letter = c("A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q",
+             "R","S","T","U","V","W","X","Y","Z","1","2","3","4","5","6","7","8",
+             "9","0"),
+  morse = c(".-","-...","-.-.","-..",".","..-.","--.","....","..",".---","-.-",
+            ".-..","--","-.","---",".--.","--.-",".-.","...","-","..-","...-",
+            ".--","-..-","-.--","--..",".----","..---","...--","....-",".....",
+            "-....","--...","---..","----.","-----"))
+```
+
+```{r}
+morse_letter <- function(x){
+  #This funcion here return the morse code of the desired letter
+  return(alphabet[alphabet$letter==x,2])}
+
+letter_morse <- function(x){
+  #This function will return the letter corresponding to the morse code
+  return(alphabet[alphabet$morse==x,1])
+}
+```
+
+```{r}
+morse_code <- function(x){
+  #This function will translate from English to Morse.
+  morse_vector <- c()
+  #Create a blank local vector
+  l <- str_replace_all(x,"[^[:alnum:]]","")
+  #Removes all special characters
+  p <- gsub(" ","",l)
+  #Removes all spaces
+  p_split <- unlist(strsplit(p,""))
+  #Creates substrings for each entry
+  for(i in 1:str_length(p)){
+    if(str_detect(p_split[i],"[[:upper:]]")==FALSE){
+      p_split[i] = toupper(p_split[i])
+      #Changes all lowercase letters to Capitals
+    }
+    morse_vector <- append(morse_vector,morse_letter(p_split[i]))
+    #Add each entry to the blank vector
+  }
+  morse_vector
+}
+```
+
+```{r}
+morse_to_english <- function(x){
+  #This function will translate from Morse to English
+  english_vector <- c()
+  #Create a blank local vector
+  p <- gsub(" ","/",x)
+  #Replace each space with a "/"
+  p_split <- unlist(strsplit(p,"/"))
+  #Creates a substring for each entry
+  for(i in 1:str_length(p)){
+    english_vector <- append(english_vector,letter_morse(p_split[i]))
+  }
+ 
+  english_vector <- english_vector[!is.na(english_vector)]
+  #Removes NA values
+  english_vector
+}
+```
