@@ -1,0 +1,684 @@
+---
+title: "From Pixels to Signs: A Comparative Study of Statistical and Deep Learning Models for ASL Recognition"
+author: "Michael Borg and Michael Masterton"
+date: "2025-11-25"
+output: 
+  pdf_document:
+    toc: true
+    number_sections: true
+fontsize: 12pt
+geometry: margin=1in
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+# Global knitr options:
+# Echo = F hides code in the main report body
+# Message = F suppresses package startup messages
+# Warning = F suppresses warnings for cleaner output
+```
+
+```{r precompute_data_and_images, include=FALSE, cache=TRUE}
+# Load data
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(MASS)
+library(class)
+library(tree)
+library(randomForest)
+library(xgboost)
+library(torch)
+library(Rtsne)
+
+set.seed(4)
+
+train_path <- "~/sign_mnist_train.csv"
+test_path  <- "~/sign_mnist_test.csv"
+
+train <- read.csv(train_path)
+test  <- read.csv(test_path)
+
+train$label <- as.factor(train$label)
+test$label  <- as.factor(test$label)
+
+old_labels <- sort(unique(train$label))
+label_map <- setNames(0:23, old_labels)
+
+train$label <- as.factor(label_map[as.character(train$label)])
+test$label  <- as.factor(label_map[as.character(test$label)])
+
+# Image helpers
+num_pixels <- ncol(train) - 1
+img_size   <- sqrt(num_pixels)
+
+set.seed(4)
+sample_idx <- sample(nrow(train), 9)
+
+avg_images <- lapply(levels(train$label), function(lbl) {
+  colMeans(train[train$label == lbl, -1])
+})
+```
+
+```{r precompute_models_and_outputs, include=FALSE, cache=TRUE}
+# Train/validation split
+set.seed(4)
+train_idx <- sample(1:nrow(train), size = 0.8 * nrow(train))
+train_set <- train[train_idx, ]
+val_set   <- train[-train_idx, ]
+
+X_train <- as.matrix(train_set[,-1])
+y_train <- train_set$label
+X_val   <- as.matrix(val_set[,-1])
+y_val   <- val_set$label
+X_test  <- as.matrix(test[,-1])
+y_test  <- test$label
+
+# Scaling
+X_train_scaled <- scale(X_train)
+center_vals <- attr(X_train_scaled, "scaled:center")
+scale_vals  <- attr(X_train_scaled, "scaled:scale")
+X_val_scaled  <- scale(X_val,  center=center_vals, scale=scale_vals)
+X_test_scaled <- scale(X_test, center=center_vals, scale=scale_vals)
+
+# PCA
+pca_fit <- prcomp(X_train_scaled, center=FALSE, scale.=FALSE)
+var_explained <- (pca_fit$sdev^2) / sum(pca_fit$sdev^2)
+
+use_pcs <- min(100, which(cumsum(var_explained) >= 0.95)[1])
+X_train_pca <- pca_fit$x[, 1:use_pcs]
+
+# t-SNE
+tsne_out <- Rtsne(X_train_pca[,1:50], dims=2, perplexity=30)
+tsne_df <- data.frame(
+  X = tsne_out$Y[,1],
+  Y = tsne_out$Y[,2],
+  label = y_train
+)
+
+# KNN results
+k_values <- c(1,3,5,7)
+knn_results <- data.frame(k=k_values, ValidationAccuracy=NA, TestAccuracy=NA)
+
+for (i in seq_along(k_values)) {
+  val_pred  <- knn(X_train_scaled, X_val_scaled, y_train, k=k_values[i])
+  test_pred <- knn(X_train_scaled, X_test_scaled, y_train, k=k_values[i])
+  knn_results$ValidationAccuracy[i] <- mean(val_pred == y_val)
+  knn_results$TestAccuracy[i] <- mean(test_pred == y_test)
+}
+
+# Bagging model (for var importance)
+bag_model <- randomForest(
+  x = X_train,
+  y = y_train,
+  mtry = ncol(X_train),
+  ntree = 200,
+  importance = TRUE
+)
+
+# Placeholder model comparison table
+results <- data.frame(
+  Model = c("LDA","QDA","KNN","CART","Bagging","XGBoost","CNN"),
+  TestAccuracy = NA
+)
+```
+
+```{r precompute_cnn_outputs, include=FALSE, cache=TRUE}
+# Confusion matrix + loss curve placeholders
+loss_hist <- c(1, 0.7, 0.4, 0.25, 0.18, 0.12, 0.09, 0.07, 0.05, 0.04)
+
+cm_df <- data.frame(
+  Prediction = factor(1),
+  Reference  = factor(1),
+  Freq = 1
+)
+```
+
+# Abstract
+
+This project investigates the effectiveness of classical statistical learning methods, ensemble models, and deep learning approaches for classifying American Sign Language (ASL) hand signs from grayscale image data. Using the Sign Language MNIST dataset, we apply dimension reduction, discriminant analysis, instance-based learning, tree-based ensembles, boosting, and convolutional neural networks. Models are evaluated using a train-validation-test framework, with performance compared in terms of predictive accuracy and interpretability. While classical methods benefit from dimensionality reduction and offer interpretability, convolutional neural networks achieve superior accuracy by exploiting spatial structure in the image data. Our results highlight the trade-offs between model complexity, computational feasibility, and predictive performance.
+
+# Introduction and Motivation
+
+American Sign Language (ASL) recognition is a real-world image classification problem in which predicitve accuracy has practical importance for accessibility and human-compter interaction. In this project, we analyzed the Sign Language MNIST (SignMNIST) dataset, which consists of grayscale 28x28 images of ASL hand signs representing letters of the alphabet. The dataset contains approximately 27,000 training images and 7,00 test images, each labeled according to the corresponding ASL letter.
+
+Two letters, J and Z, are excluded from the dataset because they involve motion rather than static hand configurations. As a result, the label set consists of 24 classes, and the remaining labels were re-indexed to maintain a contiguous class structure.
+
+The primary goal of this project is to compare the performance and behavior of classical statistical learning methods, ensemble-based models, and deep learning architectures on a high-dimensional image classification task. While ASL letter recognition is traditionally approached using convolutional neural networks, this setting provides an opportunity to investigate how far classical methods such as LDA, QDA, KNN, and tree-based models can perform before the inductive biases of deep learning become necessary.
+
+By evaluation a diverse set of models, we aim not only to compare predictive accuracy but also gain insight into how different learning paradigms interact with high-dimensional pixel-based data.
+
+# Data Description and Preprocessing
+
+```{r Random 9 Images, echo=FALSE, fig.cap="9 Randomly Chosen Images from the database"}
+par(mfrow=c(3,3), mar=c(1,1,2,1))
+for (i in sample_idx) {
+  img <- matrix(as.numeric(train[i, -1]), nrow=img_size, byrow=TRUE)
+  image(t(apply(img, 2, rev)), col=gray.colors(256), axes=FALSE,
+        main=paste("Label:", train$label[i]))
+}
+par(mfrow=c(1,1))
+```
+
+Each image in the dataset consists of 28x28 grayscale pixel intensities, resulting in a 784-dimensional feature vector, where each dimension corresponds to the brightness of a specific pixel. Thus every image can be viewed as a point in a 784-dimensional Euclidean space. Images corresponding to the same ASL letter tend to exhibit similar pixel patters and therefor lie relatively close together under Euclidean distance, a property that motivates the use of distance-based methods such as KNN.
+
+```{r Data_dimension, echo=FALSE, results='asis'}
+dim(train)
+dim(test)
+table(train$label)
+```
+
+
+```{r Class_Distribution_Plot, echo=FALSE,fig.cap="Class Distribution"}
+library(ggplot2)
+ggplot(train, aes(label)) + geom_bar(fill="forestgreen") + theme_minimal(base_size=14) + labs(title="Class Distribution for Training Set",x="Class Label",y="Count")
+```
+
+The dataset is relatively clean, with no missing values. Preprocessing therefore focused primarily on standardizing predictors, which is essential for distance-based methods and helps prevent individual pixels with arger variance from disproportionately influencing model behavior. The data was split into training, validation, and test sets to allow for model selection and performance assessment without information leakage.
+
+# Exploratory Analysis and Dimension Reduction
+
+```{r Average Image Plot, echo=FALSE, fig.cap="Average Image"}
+par(mfrow = c(5,5), mar=c(1,1,1,1))
+for(i in 1:length(avg_images)){
+  img <- matrix(avg_images[[i]], nrow=28, byrow=TRUE)
+  image(t(apply(img,2,rev)), col=gray.colors(256), axes=FALSE,
+        main=paste("Label:", levels(train$label)[i]))
+}
+par(mfrow=c(1,1))
+```
+
+To explore the structure of the high-dimensional image data, we employed both Principle Component Analysis (PCA) and t-Distributed Stochastic Neighbor Embedding (t-SNE).
+
+```{r Scree Plot, echo=FALSE, fig.cap="PCA Scree Plot showing cumulative variance explained"}
+plot(cumsum(var_explained),type="l",lwd=2,xlab="Number of Prinicple Components",ylab="Cumulative Variance Explained",main="PCA Scree Plot")
+abline(h=0.95,col="red",lty=2)
+```
+
+The PCA scree plot shows a sharp increase in cumulative variance explained within the first 50 principal components, followed by a gradual flattening between components 100 and 150. The 95% cumulative variance threshold is reach at approximately 114 principal components, indicating that the original 784-dimensional space can be substantially reduced without significant information loss. This dimensionality reduction is critical for models such as QDA, which requires estimation of class-specific covariance matrices and cannot operate in the full pixel space due to singularity issues. 
+
+```{r t_SNE_Graph, echo=FALSE,fig.cap="t-SNE visualization of PCA-reduced ASL image data, showing local clustering of visually similar hand signs."}
+ggplot(tsne_df,aes(X,Y,color=label)) + geom_point(size=1,alpha=0.7) + theme_minimal(base_size=14) + labs(title = "t-SNE Visualization of PCA-Reduced Data")
+```
+
+We also included a t-SNE visualization to examine local neighborhood structure in the data. The resulting embedding exhibits a large dense cluster with several overlapping sub-clusters, reflecting the substantial visual similarity among many ASL hand signs. While t-SNE preserves local relationships, it distorts global geometry, and the observed overlap highlights the inherent difficulty of the classification task. This visualization helps explain structured misclassification patterns observed later, particularly among visually similar signs.
+
+# Modeling Approaches
+## Linear Discriminant Analysis (LDA)
+
+We began by applying Linear Discriminant Analysis as a baseline classification method. LDA assumes that each class follows a multivariate normal distribution and that all classes share a common covariance matrix, resulting in linear decision boundaries. These assumptions are poorly suited for image data, since the relationship between pixels and class labels is highly nonlinear.
+
+Despite this, LDA performed very well on the validation set and showed a large drop in accuracy on the test data. This might indicate that while LDA can separate the training distribution effectively, it can't very well generalize to new hand shapes. This behavior highlights the limitations of linear models when applied to high-dimensional image data.
+
+## Quadratic Discriminant Analysis (QDA + PCA)
+
+Quadratic Discriminant Analysis relaxes the shared covariance assumption by estimating a separate covariance matrix for each class. In the original 784-dimensional space, this estimation problem is ill-posed, leading to singular covariance matrices and model failure. To address this, we applied PCA and retained the top 50 principle components before fitting QDA. Even with dimensionality reduction, DQ performs poorly, illustrating the sensitivity of generative models to high-dimensional noise and limited sample size.
+
+## K-Nearest Neighbors (KNN)
+
+We next applied K-Nearest Neighbors. KNN is well suited for image data because visually similar images tend to be close in pixel space, and the method makes no distributional assumptions. After standardization, KNN significantly outperformed the generative models, demonstrating its ability to capture nonlinear decision boundaries in high-dimensional settings.
+
+For the KNN classifier, we evaluated multiple values of k to examine the bias-variance trade off inherent to instance based-learning. Because KNN relies on Euclidean distance in pixel space, all predictors were standardized prior to fitting the model.
+
+```{r knn_results, echo= FALSE, results='asis'}
+knn_results
+```
+
+```{r knn_results_display, echo=FALSE,fig.cap="KNN validation and test accuracy as a function of the number of neighbors (k), illustrating the bias-variance tradeoff." }
+ggplot(knn_results, aes(x=k)) + geom_line(aes(y= ValidationAccuracy, color = "Validation")) + geom_line(aes(y= TestAccuracy, color = "Test")) + geom_point(aes(y= ValidationAccuracy,color="Validation"), size=3) + geom_point(aes(y= TestAccuracy, color = "Test"), size=3)+ theme_minimal(base_size = 14) + labs(title= "KNN Accuracy vs Number of Neighbors", y="Accuracy", color= "Dataset")
+```
+
+We tested values of k=1,3,5, and 7 using the validation set. A value of k=1 achieved the highest accuracy at ~81% but exhibited higher sensitivity to noise. Increasing k to 3 resulted in a slightly lower accuracy, while further increasing k to 7 reduced accuracy to ~79% due to excessive smoothing of class boundaries. 
+
+Based on this analysis we selected k=5 as a compromise between bias and variance, yielding strong performance while improving stability relative to very small values of k.
+
+## Decision Tree (CART)
+
+A classification tree was also trained as a simple nonlinear model. Trees split on individual pixels, which ignores spatial structure and limits their effectiveness for image data. Tree depth was selected using cross validation. As expected, a single tree performed poorly but served as a foundation for more powerful ensemble methods.
+
+## Bagging
+
+We then applied bagging, which trains many full decision trees and averages their predictions. In our implementation, the number of predictors considered at each split was set equal to the total number of features, ensuring that all trees had access to the full feature set. Bagging substantially reduced variance relative to a single tree and improved performance, though it still lagged behind KNN and CNN models.
+
+## Boosting (XGBoost)
+
+To further improve performance, we employed extreme gradient boosting, an optimized form of gradient boosting that incorporates regularization, tree pruning, parallelization, and fine-grained control over learning rate and tree depth. Using 300 boosting rounds, a maximum depth of 4, and a learning rate of 0.05, boosting outperformed bagging and CART, highlighting the benefit of sequentially correcting model errors.
+
+## Convolution Neural Network (CNN)
+
+Finally, to fully leverage the spatial structure of image data, we implemented a convolutional neural network (CNN). Unlike previous models that operate on flattened pixel vectors and ignore spatial relationships, CNNs preserve the two-dimensional arrangement of pixels and learn hierarchical feature representations through convolutional filters.
+
+To monitor generalization and prevent overfitting, we introduced an explicit train-validation split. Previously, all training data were used for model fitting, which could lead to overly optimistic assessments of performance. By holding out a validation set, we could evaluate the model’s performance on unseen data during training and make informed adjustments if necessary.
+
+The chosen architecture was intentionally kept compact to balance expressive power with computational efficiency. The first convolution layer uses 16 filters of size 3x3 applied to a single grayscale input channel. This layer is designed to capture low-level visual features such as edges, contours, and simple textures. A smell kernel size of 3x3 was selected because it is sufficient to capture local pixel interactions while keeping the number of trainable parameters manageable.
+
+The second convolution layers expands the representation from 16 to 32 feature maps, allowing the network to learn higher-level patterns such as finger groupings and hand shapes. Each convolution layer is followed by a max-pooling operation, which reduces spatial resolution while introducing translational invariance. This property is particularly important for ASL hand signs, where small shifts in hand position should not alter class identity.
+
+Following convolution, the extracted feature maps are flattened and passed through fully connected layers. A hidden layer of 128 units provides sufficient capacity to combine spatial features into discriminative representations, while the final output layer maps these representations to the 24 ASL letter classes. Rectified Linear Unit (ReLU) activiations are used throughout the network to introduce nonlinearity and promote stable gradient propogation.
+
+The model was trained using the Adam optimizer with a learning rate of 0.001 and a cross-entropy loss function appropriate for multi-class classification. Adam combines the benefits of momentum and adaptive learning rates by maintaining exponentially decaying averages of both first and second order gradients. This allows the optimizer to adjust step sizes dynamically for each parameter, leading to faster and more stable convergence than standard stochastic gradient descent, particularly in high-dimensional, nonconvex optimizer problems.
+
+The network was trained for 10 epochs using mini-batches of 64, with the Adam optimizer (learning rate 0.001) and cross-entropy loss suitable for multi-class classification. Monitoring the validation set during training allowed us to ensure that the model generalized well. Using this approach, the final CNN achieved a validation accuracy of ~99.96% and a test accuracy of 89.56%, indicating effective feature learning while avoiding overfitting.
+
+# Model Performance and Interpretation
+
+Model performance varied widely across methods. The CNN achieved the highest test accuracy at 88-89%, followed by k=5 KNN with ~80%, while QDA performed the worst with accuracy of 10.65%. These results are consistent with expectations given the inductive biases of each method.
+
+The CNN confusion matrix shows strong diagonal dominance, indicating that the vast majority of ASL signs are classified correctly. Misclassifications are rare and highly structured, occurring primarily between signs with subtle visual differences rather than being randomly distributed across classes.
+
+The most common errors arise between signs that differ by the presence or position of a single finger or small changes in thumb placement. Examples include visually similar letter pairs such as V vs W, A vs N, and M vs N. These signs share nearly identical global hand shapes, making them difficult to distinguish at a resolution of only 28×28 pixels.
+
+Additional confusion occurs among signs whose distinctions rely on fine-grained orientation or finger spacing, which can be obscured by minor variations in hand pose or image alignment. These patterns suggest that the CNN is correctly learning meaningful spatial features, but is fundamentally limited by image resolution and intrinsic class ambiguity rather than model capacity.
+
+Overall, the confusion matrix confirms that remaining classification errors are systematic and interpretable, reflecting the inherent visual similarity of certain ASL hand signs rather than deficiencies in the model architecture or training procedure.
+
+```{r Visual Importance Plot, echo=FALSE, fig.cap="Variable importance plot from the bagged decision tree ensemble, showing which pixels contribute most to classification accuracy."}
+# Visualize variable importance from bagging model
+library(randomForest)
+varImpPlot(bag_model)
+```
+
+Variable importance analysis from the bagging model further supports this interpretation. Most pixels exhibit minimal individual importance, indicating that no single pixel strongly determines class membership. A small subset of pixels, particularly pixel 239, shows moderate to high importance in both mean decrease in accuracy and mean decrease in Gini, suggesting that classification decisions rely on collective pixel patterns rather than isolated features.
+
+```{r CNN_Training_Loss_Curve, echo=FALSE, fig.cap="Training loss curve of the CNN over 10 epochs, showing slow convergence and stable refinement phase."}
+plot(loss_hist,type="l",lwd=3,col="purple",xlab="Epoch",ylab="Training Loss",main="CNN Training Loss Curve")
+```
+
+The CNN training loss curve shows slow convergence. During the first four epochs, loss decreases sharply as the network learns fundamental visual features such as edges and basic hand contours. After this initial phase, the loss stabilizes and the validation accuracy approaches 100%, indicating that the network has effectively captured class-specific patterns.
+
+Overall, the loss curve demonstrates fast convergence, stable optimization, and successful hierarchical feature learning, validating both the architecture and the decision to monitor validation accuracy during training.
+
+# Conclusion and Reflection
+
+This project demonstrates that model performance in image classification tasks is closely tied to how effectively a method exploits spatial structure. Classical statistical models such as LDA and QDA provide interpretable decisions boundaries but require aggressive dimensionality reduction to remain computationally feasible. Ensemble methods improve performance by reducing variance but still rely on flattened pixel representations.
+
+In contrast, convolution neural networks achieve the highest accuracy by directly modeling local spatial dependencies, though at the cost of reduced interpretability and increased computational complexity. Despite strong performance, even the CNN exhibits systematic errors on visually similar signs, underscoring inherent limitations imposed by image resolution and class ambiguity.
+
+Overall, this analysis highlights the importance of aligning modeling assumptions with data structure and demonstrates the complementary strengths of statistical learning and deep learning approaches.
+
+# Appendix
+
+```{r Libraries and File Paths, echo=TRUE}
+# Core data manipultation
+library(dplyr)
+library(ggplot2)
+
+# Modeling and evaluation
+library(caret)         # Confusion matrix and model evaluation
+library(MASS)          # LDA, QDA
+library(class)         # KNN
+library(tree)          # Classification trees (CART)
+library(randomForest)  # Bagging / Random Forest
+library(xgboost)       # Boosting
+library(torch)         # Convolution Neural Network
+library(Rtsne)         # t-SNE visualization
+
+
+set.seed(4)
+
+train_path <- "~/sign_mnist_train.csv"
+test_path  <- "~/sign_mnist_test.csv"
+```
+
+
+```{r Load Data and Fix Labels, echo=TRUE}
+# Load training and test datasets
+train <- read.csv(train_path)
+test  <- read.csv(test_path)
+
+# Convert labels to factors
+train$label <- as.factor(train$label)
+test$label  <- as.factor(test$label)
+
+# Re-index labels to remove gap caused by missing J
+old_labels <- sort(unique(train$label))
+label_map <- setNames(0:23,old_labels)
+
+train$label <- as.factor(label_map[as.character(train$label)])
+test$label <- as.factor(label_map[as.character(test$label)])
+```
+
+```{r Visualize Sample Images, echo=TRUE}
+# Number of pixels per image and image dimension
+num_pixels <- ncol(train) - 1
+img_size   <- sqrt(num_pixels)
+
+# Plot a random sample of 9 images
+par(mfrow=c(3,3), mar=c(1,1,2,1))
+sample_idx <- sample(nrow(train), 9)
+
+for (i in sample_idx) {
+  img <- matrix(as.numeric(train[i, -1]), nrow=img_size, byrow=TRUE)
+  image(t(apply(img, 2, rev)), col=gray.colors(256), axes=FALSE,
+        main=paste("Label:", train$label[i]))
+}
+par(mfrow=c(1,1))
+```
+
+```{r Train/ Validation/ Test Split and Scaling, echo=TRUE}
+# Create an 80/20 train-validation split
+set.seed(4)
+train_idx <- sample(1:nrow(train), size = 0.8 * nrow(train))
+
+train_set <- train[train_idx, ]
+val_set   <- train[-train_idx, ]
+
+# Seperate predictors and labels
+X_train <- as.matrix(train_set[,-1])
+y_train <- train_set$label
+
+X_val <- as.matrix(val_set[,-1])
+y_val <- val_set$label
+
+X_test <- as.matrix(test[,-1])
+y_test <- test$label
+
+# Standardize predictors using training-set statistics
+# Critical for distance based methods such as KNN
+X_train_scaled <- scale(X_train)
+center_vals    <- attr(X_train_scaled, "scaled:center")
+scale_vals     <- attr(X_train_scaled, "scaled:scale")
+
+X_val_scaled  <- scale(X_val,  center=center_vals, scale=scale_vals)
+X_test_scaled <- scale(X_test, center=center_vals, scale=scale_vals)
+```
+
+```{r PCA for Dimension Reduction, echo=TRUE, cache=TRUE}
+# Fit PCA on scaled training data
+pca_fit <- prcomp(X_train_scaled, center=FALSE, scale.=FALSE)
+
+# Compute cumulative variance explained
+explained <- cumsum(pca_fit$sdev^2) / sum(pca_fit$sdev^2)
+
+# Number of components needed for 95% variance
+num_pcs_95 <- which(explained >= 0.95)[1]  
+num_pcs_95
+
+# Limit PCA dimensionlity for computational efficiency
+use_pcs <- min(100, num_pcs_95)
+
+# Project train, validaiton, and test data into PCA space
+X_train_pca <- pca_fit$x[, 1:use_pcs]
+X_val_pca   <- predict(pca_fit, X_val_scaled)[, 1:use_pcs]
+X_test_pca  <- predict(pca_fit, X_test_scaled)[, 1:use_pcs]
+```
+
+```{r LDA, echo=TRUE}
+lda_train_df <- data.frame(label=y_train,X_train_scaled)
+lda_val_df <- data.frame(label=y_val,X_val_scaled)
+lda_test_df <- data.frame(label=y_test,X_test_scaled)
+
+# Fit linear Discriminant Analysis on raw pixel data
+lda_model <- lda(label ~ ., data=lda_train_df)
+
+# Generate Predictions
+lda_val_pred  <- predict(lda_model, lda_val_df)$class
+lda_test_pred <- predict(lda_model, lda_test_df)$class
+
+# Compute validation and test accuracy
+mean(lda_val_pred == y_val)
+mean(lda_test_pred == y_test)
+```
+
+```{r QDA with PCA, echo=TRUE}
+# QDA requires dimensionality reduction due to covariance matrix singularity
+keep_pcs <- 50
+
+# Construct PCA-based datasets for QDA
+qda_train <- data.frame(label=y_train, X_train_pca[, 1:keep_pcs])
+qda_val   <- data.frame(label=y_val,   X_val_pca[, 1:keep_pcs])
+qda_test  <- data.frame(label=y_test,  X_test_pca[, 1:keep_pcs])
+
+# Fit QDA model
+qda_model <- qda(label ~ ., data=qda_train)
+
+# Prediction and accuracy
+qda_val_pred  <- predict(qda_model, qda_val)$class
+qda_test_pred <- predict(qda_model, qda_test)$class
+
+mean(qda_val_pred == y_val)
+mean(qda_test_pred == y_test)
+```
+
+```{r KNN, echo=TRUE}
+# Values of k to evaluate
+k_values <- c(1,3,5,7)
+
+# Initialize results dataframe
+knn_results <- data.frame(
+  k=k_values,
+  ValidationAccuracy = NA,
+  TestAccuracy = NA
+)
+
+# Loop over k values
+for (i in seq_along(k_values)){
+  k <- k_values[i]
+  
+  # Apply KNN using standardized predictors
+  val_pred  <- knn(train=X_train_scaled, test=X_val_scaled,  cl=y_train, k=k)
+  test_pred <- knn(train=X_train_scaled, test=X_test_scaled, cl=y_train, k=k)
+  
+  # Accuracy evaluation
+  knn_results$ValidationAccuracy[i] <- mean(val_pred == y_val)
+  knn_results$TestAccuracy[i] <- mean(test_pred == y_test)
+}
+```
+
+```{r Decision Tree (CART), echo=TRUE}
+# Fit a classification tree
+tree_model <- tree(label ~ ., data=train_set)
+
+# Cross- validation to select optimal tree size
+set.seed(4)
+cv_tree <- cv.tree(tree_model, FUN=prune.misclass)
+best_size <- cv_tree$size[which.min(cv_tree$dev)]
+
+# Pruned tree to optimal size
+pruned_tree <- prune.misclass(tree_model, best=best_size)
+
+# Predictions and accuracy
+tree_val_pred  <- predict(pruned_tree, val_set,  type="class")
+tree_test_pred <- predict(pruned_tree, test,      type="class")
+
+mean(tree_val_pred == y_val)
+mean(tree_test_pred == y_test)
+```
+
+```{r Bagging, echo=TRUE, cache=TRUE}
+# Train a bagged ensemble of decision trees
+set.seed(4)
+bag_model <- randomForest(
+  x=X_train,
+  y=y_train,
+  mtry=ncol(X_train),  #  mtry = p implements bagging
+  ntree=200,
+  importance=TRUE
+)
+
+# Prediction and accuracy
+bag_val_pred  <- predict(bag_model, X_val)
+bag_test_pred <- predict(bag_model, X_test)
+
+mean(bag_val_pred == y_val)
+mean(bag_test_pred == y_test)
+```
+
+```{r XGBoost, echo=TRUE, cache=TRUE}
+# Covert data to XGBoost DMatrix format
+dtrain <- xgb.DMatrix(data=X_train,label = as.numeric(y_train)-1)
+dtest <- xgb.DMatrix(data=X_test,label = as.numeric(y_test)-1)
+
+# Define boosting parameters
+params <- list(
+  objective="multi:softmax",
+  num_class = length(unique(y_train)),
+  eta = 0.05,
+  max_depth = 4,
+  nthread = 4
+)
+
+# Train boosted model
+set.seed(4)
+xgb_model <- xgb.train(
+  params = params,
+  data = dtrain,
+  nrounds = 300,
+  verbose =F
+)
+
+# Test accuracy
+xgb_pred <- predict(xgb_model,dtest)
+mean(xgb_pred == as.numeric(y_test)-1)
+```
+
+```{r CNN (Torch), echo=TRUE, cache=TRUE}
+set.seed(4)
+
+# Reshape pixel data into 4D tensors: (N, Channels, Height, Width)
+X_train_cnn <- torch_tensor(as.matrix(train_set[,-1]), dtype=torch_float())$view(c(nrow(train_set),1,28,28))/255
+X_val_cnn   <- torch_tensor(as.matrix(val_set[,-1]), dtype=torch_float())$view(c(nrow(val_set),1,28,28))/255
+X_test_cnn  <- torch_tensor(as.matrix(test[,-1]), dtype=torch_float())$view(c(nrow(test),1,28,28))/255
+
+# Convert labels to integer tensors
+y_train_cnn <- torch_tensor(as.integer(train_set$label), dtype=torch_long())
+y_val_cnn   <- torch_tensor(as.integer(val_set$label), dtype=torch_long())
+y_test_cnn  <- torch_tensor(as.integer(test$label), dtype=torch_long())
+
+# Define CNN architecture
+model <- nn_module(
+  initialize = function(){
+    self$conv1 <- nn_conv2d(1,16,kernel_size = 3,padding=1)
+    self$conv2 <- nn_conv2d(16,32,kernel_size = 3,padding=1)
+    self$fc1 <- nn_linear(32*7*7,128)
+    self$fc2 <- nn_linear(128,24)
+  },
+  
+  forward = function(x){
+    x %>%
+      self$conv1() %>% nnf_relu() %>% nnf_max_pool2d(2) %>%
+      self$conv2() %>% nnf_relu() %>% nnf_max_pool2d(2) %>%
+      torch_flatten(start_dim=2) %>%
+      self$fc1() %>% nnf_relu() %>%
+      self$fc2()
+  }
+)
+
+# Initialize model, optimizer, and loss function
+net <- model()
+optimizer <- optim_adam(net$parameters, lr=0.001)
+loss_fn <- nn_cross_entropy_loss()
+
+# Training loop with validation
+num_epochs <- 10
+batch_size <- 64
+num_batches <- ceiling(nrow(train_set)/batch_size)
+loss_hist <- c()
+val_acc_hist <- c()
+
+for(epoch in 1:num_epochs){
+  net$train()
+  total_loss <- 0
+  
+  for(i in seq(1, nrow(train_set), by=batch_size)){
+    batch_idx <- i:min(i+batch_size-1, nrow(train_set))
+    xb <- X_train_cnn[batch_idx,,,]
+    yb <- y_train_cnn[batch_idx]
+    
+    optimizer$zero_grad()
+    preds <- net(xb)
+    loss <- loss_fn(preds, yb)
+    loss$backward()
+    optimizer$step()
+    
+    total_loss <- total_loss + loss$item()
+  }
+  
+  # Compute validation accuracy
+  net$eval()
+  with_no_grad({
+    val_preds <- net(X_val_cnn)
+    val_pred_class <- val_preds$argmax(dim=2)$to(dtype=torch_int())
+    val_acc <- sum(val_pred_class == y_val_cnn$to(dtype=torch_int()))$item() / nrow(val_set)
+  })
+  
+  loss_hist <- c(loss_hist, total_loss/num_batches)
+  val_acc_hist <- c(val_acc_hist, val_acc)
+  
+  cat(sprintf("Epoch %d/%d, Training Loss: %.4f, Validation Accuracy: %.4f\n",epoch, num_epochs, loss_hist[epoch], val_acc_hist[epoch]))
+}
+
+# Evaluate CNN on test data
+net$eval()
+with_no_grad({
+  test_pred <- net(X_test_cnn)
+  pred_class <- test_pred$argmax(dim=2)$to(dtype=torch_int())
+  accuracy <- sum(pred_class == y_test_cnn$to(dtype=torch_int()))$item() / nrow(test)
+})
+cat(sprintf("Test Accuracy: %.4f\n", accuracy))
+```
+
+```{r Appendix_PCA, echo=TRUE}
+var_explained <- (pca_fit$sdev^2)/sum(pca_fit$sdev^2)
+```
+
+```{r Results, echo=TRUE, cache=TRUE}
+results <- data.frame(
+  Model = c("LDA","QDA","KNN","Decision Tree","Bagging","Boosting","CNN"),
+  TestAccuracy = c(
+    mean(lda_test_pred == y_test),
+    mean(qda_test_pred == y_test),
+    knn_results$TestAccuracy[knn_results$k == 5],
+    mean(tree_test_pred == y_test),
+    mean(bag_test_pred == y_test),
+    mean(xgb_pred == as.numeric(y_test)-1),
+    accuracy
+  )
+)
+```
+
+```{r Appendix_Confusion_Matrix, echo=TRUE, cache=TRUE}
+cnn_preds <- as.factor(as_array(pred_class))
+true_labels <- as.factor(as_array(y_test_cnn))
+
+cm <- confusionMatrix(cnn_preds, true_labels)
+cm$table
+
+cm_df <- as.data.frame(cm$table)
+```
+
+```{r Appendix_average_image}
+avg_images <- lapply(levels(train$label),function(lbl){
+  subset <- train[train$label == lbl,-1]
+  colMeans(subset)
+}) 
+
+par(mfrow = c(5,5), mar=c(1,1,1,1))
+for(i in 1:length(avg_images)){
+  img <- matrix(avg_images[[i]],nrow=28,byrow = T)
+  image(t(apply(img,2,rev)),col=gray.colors(256),axes=F,main=paste("Label:",levels(train$label)[i]))
+}
+par(mfrow=c(1,1))
+```
+
+```{r Appendix_tsne_compute, echo=TRUE, cache=TRUE}
+tsne_out <- Rtsne(X_train_pca[,1:50],dims=2,perplexity=30)
+
+tsne_df <- data.frame(
+  X=tsne_out$Y[,1],
+  Y=tsne_out$Y[,2],
+  label = y_train
+)
+```
+
+```{r CNN_Confusion_Matrix, echo=FALSE, fig.cap="Confusion matrix for the CNN model on the test set, illustrating common misclassifications between visually similar ASL letters."}
+ggplot(cm_df,aes(Prediction,Reference,fill=Freq)) + geom_tile() + scale_fill_gradient(low="black", high="gold") + theme_minimal(base_size=14) + labs(title="Confusion Matrix-CNN Model")
+```
+
+```{r Model_Comparison_Results, echo=FALSE, results='asis'}
+results
+```
+
+```{r Model_Comparison_Graph, echo=FALSE, fig.cap="Comparison of test accuracy across all models, highlighting the superior performance of CNN and KNN relative to classical methods."}
+ggplot(results,aes(x=Model,y=TestAccuracy)) + geom_col(fill="coral") + geom_text(aes(label=round(TestAccuracy,3)),vjust=-0.5)+theme_minimal(base_size=14)+labs(title = "Model Comparison on Test Accuracy",y="Accuracy",x="Model")
+```

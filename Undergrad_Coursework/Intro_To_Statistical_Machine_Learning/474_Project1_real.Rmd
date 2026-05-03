@@ -1,0 +1,219 @@
+---
+title: "474_Project 1"
+author: "Michael Masterton"
+date: "2025-10-27"
+output: pdf_document
+---
+# Introduction
+
+The goal of this project was to compare the predictive performance of several classification models on real-wold financial data from UCI's repo specifically to predict company bankruptcies. The models evaluated inlcude: GLM, KNN, and Naive Bayes, and their performance was assessed using 5-fold cross-validation. The focus was on both overall accuracy and the ability to correctly identify bankrupt companies (recall).
+
+# Methods
+## 1 Data Preprocessing
+
+The data was cleaned and standarized with numeric columns, near-zero variance predictors were removed, and categorical variables were properly formatted.
+
+## 2 Modeling
+
+Fitted GLM (logistic regression), KNN, and Naive Bayes, then used a 5-fold cross validation to estimate out-of-sample performance.
+
+## 3 Evalution Metrics
+
+Accuracy: overall proportion of correct predictors.
+
+Precision: proportion of predicted bankruptcies that were correct.
+
+Recall: proportion of actual bankruptcies correctly predicted.
+
+All modeling code is included in the appendix.
+
+# Results
+Summary: GLM and KNN had the highest accuracy but very low recall for bankruptcies while Naive Bayes had slightly lower overall accuracy but much higher recall, indicating it is better at identifying bankruptcies.
+
+# Conclusion
+
+In conclusion, the best overall model depends on the goal. If correct predictions was critical then Naive Bayes would be preferred, if overall accuracy is critical then GLM or KNN would suffice.
+
+The practical takeaways from this project are that cross-validation helped reveal the tradeoffs between accruacy and recall, and that there is a balance between interpretibility and predictor performance.
+
+# Appendix
+
+## Data Preprocessing
+
+```{r lib, echo = TRUE}
+library(tidyverse)
+library(caret)
+library(e1071) #for naivebayes
+library(MASS) #for lda, qda
+library(class) #for knn
+```
+
+```{r data, echo = TRUE}
+data <- read.csv("data.csv", fileEncoding = "latin1")
+```
+
+```{r prep1, echo = TRUE}
+names(data) <- gsub("[^A-Za-z0-9_]",".",names(data))
+names(data) <- make.names(names(data), unique=T)
+```
+
+```{r prep2, echo = TRUE}
+for(col in names(data)){
+  if(is.character(data[[col]])){
+    data[[col]] <- gsub("Â¥","",data[[col]],fixed=T)
+    data[[col]] <- gsub("%","",data[[col]],fixed=T) 
+    data[[col]] <- gsub("\\?","",data[[col]],fixed=T)
+  }
+}
+```
+
+```{r prep3, echo = TRUE}
+data$Bankrupt. <- as.factor(data$Bankrupt.)
+```
+
+```{r prep4, echo = TRUE}
+num_cols <- sapply(data,is.numeric)
+data[num_cols] <- as.data.frame(scale(data[num_cols]))
+```
+
+```{r prep5, echo = TRUE}
+data[num_cols] <- lapply(data[num_cols], function(x){
+  q_low <- quantile(x,0.01,na.rm = T)
+  q_high <- quantile(x,0.99, na.rm = T)
+  x[x < q_low] <-q_low
+  x[x > q_high] <- q_high
+  return(x)
+})
+```
+
+```{r prep6, echo = TRUE}
+data <- data[,sapply(data,function(x) length(unique(x)) >1)]
+```
+
+## Data Exploration
+
+```{r explore1, echo = TRUE}
+dim(data)
+table(data$Bankrupt.)
+```
+
+```{r explore2, echo = TRUE}
+prop.table(table(data$Bankrupt.))
+```
+
+```{r explore3, echo = TRUE}
+summary(data)
+```
+
+```{r explore4, echo = TRUE}
+num_cols <- sapply(data, is.numeric)
+data[num_cols] <- lapply(data[num_cols],as.numeric)
+num_cols <- sapply(data, is.numeric) 
+```
+
+
+```{r explore5, echo = TRUE}
+cor(data[, num_cols][,1:6])
+```
+
+```{r explore6, echo = TRUE}
+boxplot(data[,1:5],main="Boxplot of first 5 predictors")
+```
+
+```{r explore7, echo = TRUE}
+plot(data[,1],data[,2],col=data$Bankrupt.,pch=19,main="Predictor 1 vs Predictor 2 by Bankrupt Status")
+```
+
+## Classification Models
+### Create Folds
+
+```{r create fold, echo = TRUE}
+set.seed(123)
+folds <- createFolds(data$Bankrupt., k=5, list=TRUE, returnTrain=FALSE)
+```
+
+### Computation
+
+```{r compution, echo = TRUE}
+metrics <- function(actual, prediction){
+  actual <- as.numeric(as.character(actual))
+  prediction <- as.numeric(as.character(prediction))
+  acc <- mean(actual == prediction)
+  tp <- sum(actual == 1 & prediction == 1)
+  tn <- sum(actual == 0 & prediction == 0)
+  fp <- sum(actual == 0 & prediction == 1)
+  fn <- sum(actual == 1 & prediction == 0)
+  precision <- ifelse(tp + fp == 0, NA, tp / (tp + fp))
+  recall    <- ifelse(tp + fn == 0, NA, tp / (tp + fn))
+  return(c(Accuracy = acc, Precision = precision, Recall = recall))
+}
+
+```
+
+### Cross Validation
+
+```{r cross validation, echo = TRUE}
+results <- data.frame(Model = character(), Fold = integer(), Accuracy = numeric(),
+                      Precision = numeric(), Recall = numeric(), stringsAsFactors=FALSE)
+```
+
+```{r loop, echo = TRUE}
+
+for(i in 1:5){
+  test_idx <- folds[[i]]
+  train_idx <- setdiff(1:nrow(data), test_idx)
+  
+  train <- data[train_idx, ]
+  test <- data[test_idx, ]
+  y_test <- test$Bankrupt.
+  
+  predictors <- setdiff(names(train), "Bankrupt.")
+  nzv_train <- nearZeroVar(train[, predictors], saveMetrics=TRUE)
+  nzv_cols <- rownames(nzv_train[nzv_train$nzv, ])
+  
+  train <- train[, setdiff(names(train), nzv_cols)]
+  test <- test[, colnames(train)]
+  
+  # KNN
+  pred_knn <- knn(train[, setdiff(names(train), "Bankrupt.")],
+                  test[, setdiff(names(train), "Bankrupt.")],
+                  cl = train$Bankrupt., k = 5)
+  res_knn <- metrics(as.numeric(y_test)-1, as.numeric(pred_knn)-1)
+  
+  # NaiveBayes
+  nb_model <- naiveBayes(Bankrupt.~., data = train)
+  pred_nb <- predict(nb_model, test)
+  res_nb <- metrics(as.numeric(y_test)-1, as.numeric(pred_nb)-1)
+  
+  # GLM
+  glm_model <- glm(Bankrupt.~., data = train, family="binomial")
+  probs <- predict(glm_model, test, type="response")
+  pred_glm <- ifelse(probs > 0.5, 1, 0)
+  res_glm <- metrics(as.numeric(y_test)-1, pred_glm)
+  
+  temp <- data.frame(
+    Model = c("KNN","NaiveBayes","GLM"),
+    Fold = i,
+    Accuracy = c(res_knn["Accuracy"], res_nb["Accuracy"], res_glm["Accuracy"]),
+    Precision = c(res_knn["Precision"], res_nb["Precision"], res_glm["Precision"]),
+    Recall = c(res_knn["Recall"], res_nb["Recall"], res_glm["Recall"]),
+    stringsAsFactors = FALSE
+  )
+  
+  # Convert numeric columns
+  temp$Accuracy <- as.numeric(temp$Accuracy)
+  temp$Precision <- as.numeric(temp$Precision)
+  temp$Recall <- as.numeric(temp$Recall)
+  
+  results <- rbind(results, temp)
+}
+```
+
+
+### Evaluate Results
+
+```{r result, echo = TRUE}
+final <- aggregate(cbind(Accuracy,Precision,Recall)~Model,data = results, mean)
+final
+```
+
